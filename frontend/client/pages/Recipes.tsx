@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { ChefHat, Clock, Sparkles, ChevronRight, Bookmark, X } from "lucide-react";
+import { ChefHat, Clock, Sparkles, ChevronRight, Bookmark, X, ShoppingCart } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useQuery } from "@tanstack/react-query";
 import { api, RecipeSuggestion } from "@/lib/api";
+import { useNavigate } from "react-router-dom";
 
 const RecipeCard = ({ name, mealType, region, match, time, summary, image, featured, onClick }: {
   name: string; mealType: string; region: string; match: number; time: string; summary: string; image: string; featured?: boolean; onClick?: () => void;
@@ -59,13 +60,23 @@ const RecipeCard = ({ name, mealType, region, match, time, summary, image, featu
 
 export default function Recipes() {
   const { token } = useAuth();
-  const recipesQuery = useQuery({
-    queryKey: ["recipes"],
-    queryFn: () => api.recipes(token!),
+  const navigate = useNavigate();
+
+  const pantryQuery = useQuery({
+    queryKey: ["pantry"],
+    queryFn: () => api.products(token!),
     enabled: !!token,
   });
 
-  const recipes = recipesQuery.data ?? [];
+  const pantryEmpty = !pantryQuery.isLoading && (pantryQuery.data?.items ?? []).length === 0;
+
+  const recipesQuery = useQuery({
+    queryKey: ["recipes"],
+    queryFn: () => api.recipes(token!),
+    enabled: !!token && !pantryEmpty,
+  });
+
+  const recipes = (recipesQuery.data ?? []).filter((r) => r.matchPercent >= 50);
   const [selectedRecipe, setSelectedRecipe] = useState<RecipeSuggestion | null>(null);
   const [isCooking, setIsCooking] = useState(false);
 
@@ -74,35 +85,67 @@ export default function Recipes() {
     setIsCooking(false);
   };
 
+  const isLoading = pantryQuery.isLoading || (recipesQuery.isLoading && !pantryEmpty);
+
   return (
     <div className="flex flex-col gap-8 p-6 pb-24 animate-in slide-in-from-bottom-6 duration-500">
       <div className="flex flex-col gap-2">
         <h2 className="text-xl font-bold text-foreground">Suggested for You</h2>
-        <p className="text-sm text-muted-foreground">Regional breakfast, lunch, dinner and snacks based on pantry products.</p>
+        <p className="text-sm text-muted-foreground">Regional breakfast, lunch, dinner and snacks based on your pantry products.</p>
       </div>
 
-      <div className="flex flex-col gap-6">
-        {recipesQuery.isLoading && <p className="text-sm text-muted-foreground">Loading recipes...</p>}
-        {!recipesQuery.isLoading && recipes.length === 0 && <p className="text-sm text-muted-foreground">Add pantry items to receive recipe suggestions.</p>}
-        {recipes.map((recipe, idx) => (
-          <RecipeCard
-            key={recipe.recipeId}
-            name={recipe.name}
-            mealType={recipe.mealType}
-            region={recipe.region}
-            match={Math.round(recipe.matchPercent)}
-            time={`${10 + idx * 5} min`}
-            summary={`Uses pantry items with score ${recipe.finalScore.toFixed(1)}.`}
-            image={recipe.imageUrl}
-            featured={idx === 0}
-            onClick={() => { setSelectedRecipe(recipe); setIsCooking(false); }}
-          />
-        ))}
-      </div>
+      {isLoading && (
+        <div className="flex flex-col gap-6">
+          <p className="text-sm text-muted-foreground">Loading recipes...</p>
+        </div>
+      )}
 
-      <button className="w-full bg-muted/50 text-muted-foreground py-4 rounded-[2rem] border-2 border-dashed border-border font-bold text-sm active:bg-muted transition-colors">
-        Find more recipes
-      </button>
+      {!isLoading && pantryEmpty && (
+        <div className="py-16 flex flex-col items-center justify-center text-center gap-4 animate-in fade-in duration-500">
+          <div className="w-20 h-20 rounded-full bg-muted/50 flex items-center justify-center">
+            <ShoppingCart className="h-10 w-10 text-muted-foreground/40" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <h3 className="text-lg font-bold text-foreground">Your pantry is empty</h3>
+            <p className="text-sm text-muted-foreground max-w-[260px]">Add products to your pantry first and we'll suggest recipes based on what you have.</p>
+          </div>
+          <button
+            onClick={() => navigate("/pantry")}
+            className="mt-2 bg-primary text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-lg shadow-primary/20 active:scale-[0.98] transition-all"
+          >
+            Go to Pantry
+          </button>
+        </div>
+      )}
+
+      {!isLoading && !pantryEmpty && recipes.length === 0 && (
+        <div className="py-12 flex flex-col items-center justify-center text-center gap-3">
+          <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+            <ChefHat className="h-8 w-8 text-muted-foreground/40" />
+          </div>
+          <h3 className="font-bold text-foreground">No matching recipes</h3>
+          <p className="text-sm text-muted-foreground max-w-[260px]">No recipes with 50%+ ingredient match. Try adding more items to your pantry.</p>
+        </div>
+      )}
+
+      {!isLoading && recipes.length > 0 && (
+        <div className="flex flex-col gap-6">
+          {recipes.map((recipe, idx) => (
+            <RecipeCard
+              key={recipe.recipeId}
+              name={recipe.name}
+              mealType={recipe.mealType}
+              region={recipe.region}
+              match={Math.round(recipe.matchPercent)}
+              time={`${10 + idx * 5} min`}
+              summary={recipe.ingredients.slice(0, 3).join(", ") + (recipe.ingredients.length > 3 ? ` +${recipe.ingredients.length - 3} more` : "")}
+              image={recipe.imageUrl}
+              featured={idx === 0}
+              onClick={() => { setSelectedRecipe(recipe); setIsCooking(false); }}
+            />
+          ))}
+        </div>
+      )}
 
       <Dialog open={!!selectedRecipe} onOpenChange={(open) => !open && handleClose()}>
         <DialogContent className="sm:max-w-md p-0 overflow-hidden bg-card border-0 shadow-2xl rounded-[2.5rem] w-[90vw] max-w-[400px] [&>button]:hidden">

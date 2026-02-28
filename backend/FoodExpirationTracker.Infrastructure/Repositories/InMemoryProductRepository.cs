@@ -169,5 +169,15 @@ public class InMemoryProductRepository : IProductRepository
         return Task.CompletedTask;
     }
 
+    public Task DeleteBatchAsync(ProductBatch batch, CancellationToken cancellationToken = default)
+    {
+        lock (Sync)
+        {
+            batch.DeletedAtUtc = DateTime.UtcNow;
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

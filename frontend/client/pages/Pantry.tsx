@@ -1,7 +1,8 @@
-import { Search, Filter, Edit2, Trash2, Plus, Clock, ChevronDown, Check } from "lucide-react";
+import { Search, Filter, Trash2, Plus, Clock, ChevronDown, Check, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, Product } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
+import { imageByName } from "@/lib/productImages";
 
 // ---------- Types ----------
 
@@ -35,17 +37,25 @@ type ProductGroup = {
   earliestDays: number;
 };
 
-// ---------- Helpers ----------
+const CATEGORIES = [
+  "General", "Dairy", "Fruits", "Vegetables", "Meat", "Bakery Item",
+  "Snacks", "Grains", "Beverages", "Condiments", "Frozen",
+];
 
-const imageByName = (name: string) => {
-  const n = name.toLowerCase();
-  if (n.includes("milk")) return "https://images.unsplash.com/photo-1563636619-e9107da5a165?auto=format&fit=crop&w=300&q=80";
-  if (n.includes("bread")) return "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=300&q=80";
-  if (n.includes("egg")) return "https://images.unsplash.com/photo-1506976785307-8732e854ad03?auto=format&fit=crop&w=300&q=80";
-  if (n.includes("tomato")) return "https://images.unsplash.com/photo-1597362925123-77861d3fbac7?auto=format&fit=crop&w=300&q=80";
-  if (n.includes("onion")) return "https://images.unsplash.com/photo-1508747703725-7197771375a0?auto=format&fit=crop&w=300&q=80";
-  return "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=300&q=80";
-};
+function inferCategory(name: string): string {
+  const l = name.toLowerCase();
+  if (/milk|cheese|butter|yogurt|cream|paneer|curd/.test(l)) return "Dairy";
+  if (/bread|bun|cake|pastry|croissant/.test(l)) return "Bakery Item";
+  if (/biscuit|cookie|chocolate|chips|wafer|snack/.test(l)) return "Snacks";
+  if (/banana|apple|orange|mango|grape|papaya/.test(l)) return "Fruits";
+  if (/chicken|beef|fish|mutton|pork|meat|prawn/.test(l)) return "Meat";
+  if (/tomato|onion|potato|carrot|spinach|broccoli/.test(l)) return "Vegetables";
+  if (/rice|pasta|noodle|oats|cereal|wheat|flour/.test(l)) return "Grains";
+  if (/juice|soda|water|tea|coffee|drink/.test(l)) return "Beverages";
+  return "General";
+}
+
+// ---------- Helpers ----------
 
 const getStatusColor = (s: string) => {
   switch (s) {
@@ -76,7 +86,7 @@ function groupProducts(products: Product[]): ProductGroup[] {
       const enrichedBatches: EnrichedBatch[] = product.batches
         .map((b) => {
           const days = Math.ceil((new Date(b.expiryDate).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          const status: StatusType = days < 0 ? "expired" : days <= 3 ? "expiring" : "safe";
+          const status: StatusType = days < 0 ? "expired" : days <= 2 ? "expiring" : "safe";
           return { batchId: b.batchId, expiryDate: b.expiryDate, quantity: b.quantity, days, status };
         })
         .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
@@ -93,7 +103,7 @@ function groupProducts(products: Product[]): ProductGroup[] {
         productId: product.productId,
         name: product.name,
         categoryName: product.categoryName,
-        image: imageByName(product.name),
+        image: imageByName(product.name, product.categoryName),
         enrichedBatches,
         earliestExpiry: earliest?.expiryDate ?? "",
         worstStatus,
@@ -107,8 +117,9 @@ function groupProducts(products: Product[]): ProductGroup[] {
 
 // ---------- Components ----------
 
-const SingleBatchCard = ({ group, onConsume }: { group: ProductGroup; onConsume: (batchId: string) => void }) => {
+const SingleBatchCard = ({ group, onDelete, onEdit, isDeleting }: { group: ProductGroup; onDelete: (batchId: string) => void; onEdit: (group: ProductGroup, batch: EnrichedBatch) => void; isDeleting: boolean }) => {
   const batch = group.enrichedBatches[0];
+  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <div className="bg-card rounded-[2rem] p-4 border border-border shadow-sm flex items-center gap-4 group animate-in slide-in-from-left duration-300">
       <div className="w-20 h-20 rounded-3xl bg-primary/10 overflow-hidden flex-shrink-0 shadow-inner flex items-center justify-center">
@@ -117,13 +128,39 @@ const SingleBatchCard = ({ group, onConsume }: { group: ProductGroup; onConsume:
       <div className="flex-1 flex flex-col gap-1">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-foreground text-base tracking-tight">{group.name} (x{batch.quantity})</h3>
-          <div className="flex gap-1">
-            <button className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors active:scale-90" onClick={() => onConsume(batch.batchId)} title="Use 1 quantity">
-              <Edit2 className="h-3.5 w-3.5" />
+          <div className="flex gap-1 items-center">
+            <button
+              className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-blue-500 transition-colors active:scale-90"
+              onClick={() => onEdit(group, batch)}
+              title="Edit"
+            >
+              <Pencil className="h-3.5 w-3.5" />
             </button>
-            <button className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors active:scale-90" title="Not implemented">
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            {confirmDelete ? (
+              <>
+                <button
+                  className="h-7 px-2 rounded-lg bg-destructive text-destructive-foreground text-[10px] font-bold active:scale-95 disabled:opacity-50"
+                  disabled={isDeleting}
+                  onClick={() => { onDelete(batch.batchId); setConfirmDelete(false); }}
+                >
+                  {isDeleting ? "..." : "Delete"}
+                </button>
+                <button
+                  className="h-7 px-2 rounded-lg bg-muted text-muted-foreground text-[10px] font-bold active:scale-95"
+                  onClick={() => setConfirmDelete(false)}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors active:scale-90"
+                onClick={() => setConfirmDelete(true)}
+                title="Delete"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
         <p className="text-[11px] text-muted-foreground flex items-center gap-1 font-medium">
@@ -143,36 +180,65 @@ const SingleBatchCard = ({ group, onConsume }: { group: ProductGroup; onConsume:
   );
 };
 
-const BatchSubCard = ({ batch, onConsume }: { batch: EnrichedBatch; onConsume: (batchId: string) => void }) => (
-  <div className="bg-muted/50 rounded-2xl p-3 border border-border/50 flex items-center gap-3">
-    <div className="flex-1 flex flex-col gap-1">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground flex items-center gap-1 font-medium">
-          <Clock className="h-3 w-3" />
-          Exp: {batch.expiryDate} &nbsp;x{batch.quantity}
-        </p>
-        <div className="flex gap-1">
-          <button className="w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors active:scale-90" onClick={() => onConsume(batch.batchId)} title="Use 1 quantity">
-            <Edit2 className="h-3 w-3" />
-          </button>
-          <button className="w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors active:scale-90" title="Not implemented">
-            <Trash2 className="h-3 w-3" />
-          </button>
+const BatchSubCard = ({ batch, onDelete, onEdit, isDeleting }: { batch: EnrichedBatch; onDelete: (batchId: string) => void; onEdit: (batch: EnrichedBatch) => void; isDeleting: boolean }) => {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  return (
+    <div className="bg-muted/50 rounded-2xl p-3 border border-border/50 flex items-center gap-3">
+      <div className="flex-1 flex flex-col gap-1">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground flex items-center gap-1 font-medium">
+            <Clock className="h-3 w-3" />
+            Exp: {batch.expiryDate} &nbsp;x{batch.quantity}
+          </p>
+          <div className="flex gap-1 items-center">
+            <button
+              className="w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-blue-500 transition-colors active:scale-90"
+              onClick={() => onEdit(batch)}
+              title="Edit"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+            {confirmDelete ? (
+              <>
+                <button
+                  className="h-6 px-2 rounded-lg bg-destructive text-destructive-foreground text-[10px] font-bold active:scale-95 disabled:opacity-50"
+                  disabled={isDeleting}
+                  onClick={() => { onDelete(batch.batchId); setConfirmDelete(false); }}
+                >
+                  {isDeleting ? "..." : "Delete"}
+                </button>
+                <button
+                  className="h-6 px-2 rounded-lg bg-muted text-muted-foreground text-[10px] font-bold active:scale-95"
+                  onClick={() => setConfirmDelete(false)}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                className="w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors active:scale-90"
+                onClick={() => setConfirmDelete(true)}
+                title="Delete"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="h-1.5 flex-1 rounded-full bg-background overflow-hidden">
-          <div className={cn("h-full rounded-full transition-all duration-1000", getStatusColor(batch.status))} style={{ width: progressWidth(batch.days) }} />
+        <div className="flex items-center gap-3">
+          <div className="h-1.5 flex-1 rounded-full bg-background overflow-hidden">
+            <div className={cn("h-full rounded-full transition-all duration-1000", getStatusColor(batch.status))} style={{ width: progressWidth(batch.days) }} />
+          </div>
+          <span className={cn("text-[10px] font-bold uppercase tracking-wider", statusTextColor(batch.status))}>
+            {statusLabel(batch.status, batch.days)}
+          </span>
         </div>
-        <span className={cn("text-[10px] font-bold uppercase tracking-wider", statusTextColor(batch.status))}>
-          {statusLabel(batch.status, batch.days)}
-        </span>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
-const MultiBatchCard = ({ group, onConsume }: { group: ProductGroup; onConsume: (batchId: string) => void }) => (
+const MultiBatchCard = ({ group, onDelete, onEdit, isDeleting }: { group: ProductGroup; onDelete: (batchId: string) => void; onEdit: (group: ProductGroup, batch: EnrichedBatch) => void; isDeleting: boolean }) => (
   <Accordion type="single" collapsible className="animate-in slide-in-from-left duration-300">
     <AccordionItem value={group.productId} className="border-none">
       <div className="bg-card rounded-[2rem] border border-border shadow-sm overflow-hidden">
@@ -206,7 +272,7 @@ const MultiBatchCard = ({ group, onConsume }: { group: ProductGroup; onConsume: 
         <AccordionContent className="pb-0 pt-0">
           <div className="flex flex-col gap-2 px-4 pb-4">
             {group.enrichedBatches.map((batch) => (
-              <BatchSubCard key={batch.batchId} batch={batch} onConsume={onConsume} />
+              <BatchSubCard key={batch.batchId} batch={batch} onDelete={onDelete} onEdit={(b) => onEdit(group, b)} isDeleting={isDeleting} />
             ))}
           </div>
         </AccordionContent>
@@ -215,22 +281,39 @@ const MultiBatchCard = ({ group, onConsume }: { group: ProductGroup; onConsume: 
   </Accordion>
 );
 
-const ProductGroupCard = ({ group, onConsume }: { group: ProductGroup; onConsume: (batchId: string) => void }) => {
+const ProductGroupCard = ({ group, onDelete, onEdit, isDeleting }: { group: ProductGroup; onDelete: (batchId: string) => void; onEdit: (group: ProductGroup, batch: EnrichedBatch) => void; isDeleting: boolean }) => {
   if (group.enrichedBatches.length === 1) {
-    return <SingleBatchCard group={group} onConsume={onConsume} />;
+    return <SingleBatchCard group={group} onDelete={onDelete} onEdit={onEdit} isDeleting={isDeleting} />;
   }
-  return <MultiBatchCard group={group} onConsume={onConsume} />;
+  return <MultiBatchCard group={group} onDelete={onDelete} onEdit={onEdit} isDeleting={isDeleting} />;
 };
 
 // ---------- Main Page ----------
+
+type EditState = {
+  batchId: string;
+  name: string;
+  categoryName: string;
+  expiryDate: string;
+  quantity: number;
+} | null;
 
 export default function Pantry() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "expiring" | "expired" | "safe">("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("All Categories");
+  const [editState, setEditState] = useState<EditState>(null);
+  const [editSaving, setEditSaving] = useState(false);
   const { token } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
+
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ["pantry"] });
+    qc.invalidateQueries({ queryKey: ["products-home"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    qc.invalidateQueries({ queryKey: ["recipes-home"] });
+  };
 
   const pantryQuery = useQuery({
     queryKey: ["pantry"],
@@ -243,14 +326,54 @@ export default function Pantry() {
     return ["All Categories", ...Array.from(new Set(cats))];
   }, [pantryQuery.data]);
 
-  const consume = useMutation({
-    mutationFn: (batchId: string) => api.consumeBatch(token!, batchId, 1),
+  const deleteBatch = useMutation({
+    mutationFn: (batchId: string) => api.deleteBatch(token!, batchId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["pantry"] });
-      qc.invalidateQueries({ queryKey: ["products-home"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateAll();
+      toast.success("Product deleted");
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
     },
   });
+
+  const openEdit = (group: ProductGroup, batch: EnrichedBatch) => {
+    setEditState({
+      batchId: batch.batchId,
+      name: group.name,
+      categoryName: group.categoryName,
+      expiryDate: batch.expiryDate,
+      quantity: batch.quantity,
+    });
+  };
+
+  const handleEditNameChange = (value: string) => {
+    setEditState((s) => {
+      if (!s) return s;
+      const cat = inferCategory(value);
+      return { ...s, name: value, categoryName: cat !== "General" ? cat : s.categoryName };
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editState || !token) return;
+    setEditSaving(true);
+    try {
+      await api.deleteBatch(token, editState.batchId);
+      await api.addProduct(token, {
+        name: editState.name,
+        categoryName: editState.categoryName,
+        expiryDate: editState.expiryDate,
+        quantity: editState.quantity,
+      });
+      invalidateAll();
+      setEditState(null);
+    } catch {
+      // keep sheet open on error
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const items = useMemo(() => {
     const groups = groupProducts(pantryQuery.data?.items ?? []);
@@ -337,13 +460,82 @@ export default function Pantry() {
           </div>
         )}
         {items.map((group) => (
-          <ProductGroupCard key={group.productId} group={group} onConsume={(id) => consume.mutate(id)} />
+          <ProductGroupCard
+            key={group.productId}
+            group={group}
+            onDelete={(id) => deleteBatch.mutate(id)}
+            onEdit={openEdit}
+            isDeleting={deleteBatch.isPending}
+          />
         ))}
       </div>
 
-      <Button onClick={() => navigate("/scan?source=pantry")} className="fixed bottom-24 right-6 w-14 h-14 rounded-2xl shadow-xl shadow-primary/30 z-50 animate-in slide-in-from-bottom-10">
+      <Button onClick={() => navigate("/scan?source=pantry&mode=manual")} className="fixed bottom-24 right-6 w-14 h-14 rounded-2xl shadow-xl shadow-primary/30 z-50 animate-in slide-in-from-bottom-10">
         <Plus className="h-6 w-6" />
       </Button>
+
+      {editState && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-6 animate-in fade-in duration-200" onClick={() => setEditState(null)}>
+          <div className="w-full max-w-sm bg-card rounded-[2rem] p-6 flex flex-col gap-4 shadow-2xl animate-in zoom-in-95 duration-300 max-h-[85vh] overflow-y-auto no-scrollbar" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-foreground">Edit Product</h3>
+              <button onClick={() => setEditState(null)} className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Product Name</label>
+              <Input
+                value={editState.name}
+                onChange={(e) => handleEditNameChange(e.target.value)}
+                placeholder="Product name"
+                className="rounded-xl h-11"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Category</label>
+              <select
+                className="h-11 rounded-xl border border-input px-3 text-sm bg-background text-foreground w-full"
+                value={editState.categoryName}
+                onChange={(e) => setEditState((s) => s ? { ...s, categoryName: e.target.value } : s)}
+              >
+                {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Expiry Date</label>
+              <Input
+                type="date"
+                value={editState.expiryDate}
+                onChange={(e) => setEditState((s) => s ? { ...s, expiryDate: e.target.value } : s)}
+                className="rounded-xl h-11"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Quantity</label>
+              <Input
+                type="number"
+                min={1}
+                value={editState.quantity}
+                onChange={(e) => setEditState((s) => s ? { ...s, quantity: Number(e.target.value) || 1 } : s)}
+                className="rounded-xl h-11"
+              />
+            </div>
+
+            <Button
+              onClick={saveEdit}
+              disabled={editSaving || !editState.name.trim()}
+              className="rounded-2xl h-12 font-bold"
+            >
+              {editSaving ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

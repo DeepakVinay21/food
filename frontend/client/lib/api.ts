@@ -195,6 +195,9 @@ export const api = {
       body: JSON.stringify({ batchId, quantityUsed }),
     }, token),
 
+  deleteBatch: (token: string, batchId: string) =>
+    request<void>(`/api/v1/products/batch/${batchId}`, { method: "DELETE" }, token),
+
   recipes: (token: string) => request<RecipeSuggestion[]>("/api/v1/recipes/suggestions", {}, token),
 
   scanImagePreview: (token: string, file: Blob | File, fileName: string, quantity: number) =>

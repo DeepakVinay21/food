@@ -1,126 +1,26 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Food Expiration Tracker</title>
-  <link rel="stylesheet" href="/assets/styles.css" />
-</head>
-<body>
-  <div class="bg-orb orb-a"></div>
-  <div class="bg-orb orb-b"></div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hello world project</title>
+    <script>
+      try {
+        var stored = localStorage.getItem('foodtrack_preferences');
+        if (stored) {
+          var parsed = JSON.parse(stored);
+          if (parsed.darkMode) {
+            document.documentElement.classList.add('dark');
+          }
+        }
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="./assets/index-gioGLGNh.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BM8JBtQj.css">
+  </head>
 
-  <main class="app-shell">
-    <header class="topbar">
-      <div class="brand-wrap">
-        <p class="eyebrow">Waste Less, Eat Better</p>
-        <h1>Food Expiration Tracker</h1>
-      </div>
-      <div class="topbar-actions">
-        <span id="auth-state" class="chip muted">Guest</span>
-        <button id="logout-btn" class="btn ghost hidden">Logout</button>
-      </div>
-    </header>
+  <body>
+    <div id="root"></div>
 
-    <section id="auth-card" class="panel auth-panel">
-      <div class="auth-tabs">
-        <button class="auth-tab active" data-auth-tab="login">Login</button>
-        <button class="auth-tab" data-auth-tab="register">Register</button>
-      </div>
-
-      <form id="login-form" class="auth-form">
-        <label>Email<input id="login-email" type="email" required /></label>
-        <label>Password<input id="login-password" type="password" required /></label>
-        <button class="btn primary" type="submit">Login</button>
-      </form>
-
-      <form id="register-form" class="auth-form hidden">
-        <label>Email<input id="register-email" type="email" required /></label>
-        <label>Password<input id="register-password" type="password" required /></label>
-        <button class="btn primary" type="submit">Create Account</button>
-      </form>
-    </section>
-
-    <section id="app-content" class="hidden">
-      <nav class="section-tabs">
-        <button class="section-tab active" data-tab="dashboard">Dashboard</button>
-        <button class="section-tab" data-tab="inventory">Inventory</button>
-        <button class="section-tab" data-tab="scan">Scan OCR</button>
-        <button class="section-tab" data-tab="recipes">Recipes</button>
-      </nav>
-
-      <section id="tab-dashboard" class="panel tab-panel">
-        <div class="metrics-grid">
-          <article class="metric-card">
-            <p>Total Products</p>
-            <h2 id="m-total">0</h2>
-          </article>
-          <article class="metric-card alert">
-            <p>Expiring Soon</p>
-            <h2 id="m-expiring">0</h2>
-          </article>
-          <article class="metric-card">
-            <p>Used This Month</p>
-            <h2 id="m-used">0</h2>
-          </article>
-          <article class="metric-card">
-            <p>Waste This Month</p>
-            <h2 id="m-waste">0</h2>
-          </article>
-        </div>
-      </section>
-
-      <section id="tab-inventory" class="panel tab-panel hidden">
-        <div class="panel-head">
-          <h3>Add Product Batch</h3>
-          <div class="filter-row">
-            <input id="category-filter" placeholder="Filter category" />
-            <button id="apply-filter" class="btn ghost">Apply</button>
-          </div>
-        </div>
-
-        <form id="add-product-form" class="grid-form">
-          <label>Name<input id="p-name" required /></label>
-          <label>Category<input id="p-category" required /></label>
-          <label>Expiry<input id="p-expiry" type="date" required /></label>
-          <label>Quantity<input id="p-qty" type="number" min="1" value="1" required /></label>
-          <button class="btn primary" type="submit">Add Batch</button>
-        </form>
-
-        <div id="inventory-list" class="stack"></div>
-      </section>
-
-      <section id="tab-scan" class="panel tab-panel hidden">
-        <h3>OCR Product Scan</h3>
-        <p class="muted">Paste OCR text from camera scan. The backend will parse product name/date/category.</p>
-        <form id="scan-form" class="grid-form">
-          <label>OCR Text<textarea id="ocr-text" rows="5" required></textarea></label>
-          <label>Quantity<input id="ocr-qty" type="number" min="1" value="1" required /></label>
-          <button class="btn primary" type="submit">Scan & Add</button>
-        </form>
-
-        <h4>Correct OCR Date</h4>
-        <form id="correct-form" class="grid-form">
-          <label>Batch ID<input id="c-batch" required /></label>
-          <label>Original Date<input id="c-original" type="date" required /></label>
-          <label>Corrected Date<input id="c-corrected" type="date" required /></label>
-          <label>Raw OCR Text<textarea id="c-raw" rows="3" required></textarea></label>
-          <button class="btn ghost" type="submit">Submit Correction</button>
-        </form>
-      </section>
-
-      <section id="tab-recipes" class="panel tab-panel hidden">
-        <div class="panel-head">
-          <h3>Recipe Suggestions</h3>
-          <button id="refresh-recipes" class="btn ghost">Refresh</button>
-        </div>
-        <div id="recipe-list" class="stack"></div>
-      </section>
-    </section>
-
-    <div id="toast" class="toast hidden"></div>
-  </main>
-
-  <script src="/assets/app.js" defer></script>
-</body>
+  </body>
 </html>

@@ -28,7 +28,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: "postgresql://freshtrack_user:freshtrack_local_pass@db:5432/freshtrack"
-      GEMINI_API_KEY: "AIzaSyC-fIcAYKQnDMqk22RbLMQn6_RS9MtRJ40"
+      GEMINI_API_KEY: "AIzaSyCQnrUZ4V213SVyG6pRjgh4Dl9YUnCV0_4"
       JWT_SECRET: "FreshTrack-Local-Dev-Secret-Key-32chars!"
       PORT: "5001"
       ASPNETCORE_ENVIRONMENT: "Production"

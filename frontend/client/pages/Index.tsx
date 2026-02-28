@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { imageByName } from "@/lib/productImages";
+
+const FIRST_NAME_KEY = "foodtrack_firstName";
 
 const SummaryCard = ({ title, count, color, bg }: { title: string; count: number; color: string; bg: string }) => (
   <div className={cn("p-3 sm:p-4 rounded-2xl flex flex-col items-center justify-center gap-1 shadow-sm text-center w-full h-full", bg)}>
@@ -30,14 +33,14 @@ const ExpiringProductCard = ({ name, expiry, days, color, image }: { name: strin
     </div>
     <div className="mt-auto">
       <Badge variant="outline" className={cn("text-[10px] py-0 px-2 h-5", color)}>
-        {days <= 0 ? "Expired" : days === 0 ? "Expires Today" : `Expires in ${days} days`}
+        {days === 0 ? "Expires Today" : days === 1 ? "Expires Tomorrow" : `Expires in ${days} days`}
       </Badge>
     </div>
   </div>
 );
 
 const SearchResultItem = ({ item }: { item: { name: string; expiry: string; days: number; status: string } }) => {
-  const color = item.status === "expired" ? "text-red-500 bg-red-50" : item.status === "expiring" ? "text-orange-500 bg-orange-50" : "text-primary bg-primary/10";
+  const color = item.status === "expired" ? "text-red-500 bg-red-50 dark:bg-red-500/10" : item.status === "expiring" ? "text-orange-500 bg-orange-50 dark:bg-orange-500/10" : "text-primary bg-primary/10";
 
   return (
     <div className="bg-card p-3 rounded-2xl border border-border flex items-center justify-between shadow-sm">
@@ -59,6 +62,19 @@ export default function Index() {
   const { token, email } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
+
+  const profileQuery = useQuery({
+    queryKey: ["profile"],
+    queryFn: async () => {
+      const data = await api.profile(token!);
+      if (data.firstName) localStorage.setItem(FIRST_NAME_KEY, data.firstName);
+      return data;
+    },
+    enabled: !!token,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const firstName = profileQuery.data?.firstName || localStorage.getItem(FIRST_NAME_KEY) || email?.split("@")[0] || "User";
 
   const dashboardQuery = useQuery({
     queryKey: ["dashboard"],
@@ -83,7 +99,7 @@ export default function Index() {
     return (productsQuery.data?.items ?? []).flatMap((p) =>
       p.batches.map((b) => {
         const days = Math.ceil((new Date(b.expiryDate).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        const status = days < 0 ? "expired" : days <= 3 ? "expiring" : "safe";
+        const status = days < 0 ? "expired" : days <= 2 ? "expiring" : "safe";
         return { name: p.name, expiry: b.expiryDate, days, status };
       })
     );
@@ -91,17 +107,13 @@ export default function Index() {
 
   const expiringProducts = useMemo(() => {
     return allProductBatches
-      .filter((p) => p.status === "expiring" || p.status === "expired")
+      .filter((p) => p.status === "expiring")
       .sort((a, b) => a.days - b.days)
       .slice(0, 5)
-      .map((p, idx) => ({
+      .map((p) => ({
         ...p,
-        color: p.days <= 0 ? "text-red-500 border-red-200 bg-red-50" : "text-orange-500 border-orange-200 bg-orange-50",
-        image: [
-          "https://images.unsplash.com/photo-1563636619-e9107da5a165?auto=format&fit=crop&w=300&q=80",
-          "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=300&q=80",
-          "https://images.unsplash.com/photo-1597362925123-77861d3fbac7?auto=format&fit=crop&w=300&q=80",
-        ][idx % 3],
+        color: p.days === 0 ? "text-red-500 border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30" : "text-orange-500 border-orange-200 bg-orange-50 dark:bg-orange-500/10 dark:border-orange-500/30",
+        image: imageByName(p.name),
       }));
   }, [allProductBatches]);
 
@@ -110,20 +122,20 @@ export default function Index() {
     return allProductBatches.filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [allProductBatches, searchQuery]);
 
-  const suggestion = recipesQuery.data?.[0];
+  const suggestion = recipesQuery.data?.find((r) => r.matchPercent >= 50);
   const expiredCount = allProductBatches.filter((p) => p.status === "expired").length;
 
   return (
     <div className="flex flex-col gap-6 pb-24 animate-in fade-in duration-500">
       <div className="px-6 pt-6 flex flex-col gap-1">
-        <h2 className="text-2xl font-bold text-foreground leading-tight">Hello, {email?.split("@")[0] ?? "User"}!</h2>
+        <h2 className="text-2xl font-bold text-foreground leading-tight">Hello, {firstName}!</h2>
         <p className="text-sm text-muted-foreground">Ready to save some food today?</p>
       </div>
 
       <div className="px-6 grid grid-cols-3 gap-3">
         <SummaryCard title="Total Items" count={dashboardQuery.data?.totalProducts ?? 0} color="text-primary" bg="bg-primary/10" />
-        <SummaryCard title="Expiring Soon" count={dashboardQuery.data?.expiringSoonCount ?? 0} color="text-orange-600" bg="bg-orange-50" />
-        <SummaryCard title="Expired" count={expiredCount} color="text-red-600" bg="bg-red-50" />
+        <SummaryCard title="Expiring Soon" count={dashboardQuery.data?.expiringSoonCount ?? 0} color="text-orange-600 dark:text-orange-400" bg="bg-orange-50 dark:bg-orange-500/10" />
+        <SummaryCard title="Expired" count={expiredCount} color="text-red-600 dark:text-red-400" bg="bg-red-50 dark:bg-red-500/10" />
       </div>
 
       <div className="px-6 flex flex-col gap-4">
@@ -141,7 +153,7 @@ export default function Index() {
           <div className="grid grid-cols-2 gap-3">
             <Button
               variant="outline"
-              onClick={() => navigate("/scan?source=pantry")}
+              onClick={() => navigate("/scan?mode=manual")}
               className="h-14 rounded-2xl bg-card border-border shadow-sm flex items-center justify-center gap-2 hover:bg-muted/50 transition-colors"
             >
               <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
@@ -157,7 +169,7 @@ export default function Index() {
               <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center">
                 <ScanLine className="h-4 w-4 text-blue-500" />
               </div>
-              <span className="font-semibold text-foreground">Scan Receipt</span>
+              <span className="font-semibold text-foreground">Scan</span>
             </Button>
           </div>
         )}

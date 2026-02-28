@@ -75,6 +75,20 @@ public class ProductService
         await _productRepository.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task DeleteBatchAsync(Guid userId, Guid batchId, CancellationToken cancellationToken = default)
+    {
+        var isOwned = await _productRepository.IsBatchOwnedByUserAsync(batchId, userId, cancellationToken);
+        if (!isOwned)
+        {
+            throw new UnauthorizedAccessException("This batch does not belong to the current user.");
+        }
+
+        var batch = await _productRepository.GetBatchByIdAsync(batchId, cancellationToken)
+            ?? throw new KeyNotFoundException("Batch not found.");
+
+        await _productRepository.DeleteBatchAsync(batch, cancellationToken);
+    }
+
     public async Task<PagedResult<ProductDto>> GetUserInventoryAsync(
         Guid userId,
         string? categoryName,

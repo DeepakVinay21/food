@@ -126,6 +126,13 @@ public class EfProductRepository : IProductRepository
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task DeleteBatchAsync(ProductBatch batch, CancellationToken cancellationToken = default)
+    {
+        batch.DeletedAtUtc = DateTime.UtcNow;
+        _db.ProductBatches.Update(batch);
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         await _db.SaveChangesAsync(cancellationToken);

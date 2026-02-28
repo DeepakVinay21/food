@@ -1,5 +1,5 @@
-import { Camera, Image as LucideImage, X, CheckCircle2, PencilLine, AlertTriangle, ChevronDown, ShieldCheck } from "lucide-react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Camera, X, CheckCircle2, PencilLine, AlertTriangle, ChevronDown, ShieldCheck, Bell, Upload, ArrowLeft } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -25,6 +25,47 @@ type ReviewForm = {
   quantity: number;
   rawText: string;
 };
+
+const ALERT_STORAGE_KEY = "foodtrack_product_alerts";
+const PRODUCT_IMAGES_KEY = "foodtrack_product_images";
+const PREF_KEY = "foodtrack_preferences";
+
+function isInSilentHours(): boolean {
+  try {
+    const prefs = JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
+    if (!prefs.silentHours) return false;
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const [sh, sm] = (prefs.silentStart || "22:00").split(":").map(Number);
+    const [eh, em] = (prefs.silentEnd || "07:00").split(":").map(Number);
+    const start = sh * 60 + sm;
+    const end = eh * 60 + em;
+    if (start <= end) return currentMinutes >= start && currentMinutes < end;
+    return currentMinutes >= start || currentMinutes < end;
+  } catch { return false; }
+}
+
+function saveProductAlert(productName: string, expiryDate: string, timing: string) {
+  if (timing === "none") return;
+  const silent = isInSilentHours();
+  const alerts = JSON.parse(localStorage.getItem(ALERT_STORAGE_KEY) || "[]");
+  alerts.push({ productName, expiryDate, alertType: timing, silent, createdAt: new Date().toISOString() });
+  localStorage.setItem(ALERT_STORAGE_KEY, JSON.stringify(alerts));
+}
+
+function saveProductImage(productName: string, dataUrl: string) {
+  const images: Record<string, string> = JSON.parse(localStorage.getItem(PRODUCT_IMAGES_KEY) || "{}");
+  images[productName.toLowerCase().trim()] = dataUrl;
+  localStorage.setItem(PRODUCT_IMAGES_KEY, JSON.stringify(images));
+}
+
+function fileToDataUrl(file: Blob | File): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.readAsDataURL(file);
+  });
+}
 
 const CATEGORIES = [
   "General", "Dairy", "Fruits", "Vegetables", "Meat", "Bakery Item",
@@ -172,13 +213,16 @@ function inferCategory(name: string): string {
 }
 
 function ConfidenceBadge({ score }: { score: number }) {
-  if (score >= 70) return <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">High ({score}%)</span>;
-  if (score >= 40) return <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">Medium ({score}%)</span>;
-  return <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Low ({score}%) - Verify</span>;
+  if (score >= 70) return <span className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 px-2 py-0.5 rounded-full">High ({score}%)</span>;
+  if (score >= 40) return <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10 px-2 py-0.5 rounded-full">Medium ({score}%)</span>;
+  return <span className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 px-2 py-0.5 rounded-full">Low ({score}%) - Verify</span>;
 }
 
 export default function Scan() {
-  useSearchParams();
+  const [searchParams] = useSearchParams();
+  const sourceParam = searchParams.get("source") || "home";
+  const modeParam = searchParams.get("mode");
+  const closePath = sourceParam === "pantry" ? "/pantry" : "/";
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -197,6 +241,12 @@ export default function Scan() {
   const [fieldConfidence, setFieldConfidence] = useState<FieldConfidence | null>(null);
   const [needsHumanReview, setNeedsHumanReview] = useState(false);
   const [humanVerified, setHumanVerified] = useState(false);
+
+  const [alertTiming, setAlertTiming] = useState<string>("1d");
+  const [productImageUrl, setProductImageUrl] = useState<string | null>(null);
+  const [productImageFile, setProductImageFile] = useState<File | null>(null);
+  const [manualScanning, setManualScanning] = useState(false);
+  const productImageInputRef = useRef<HTMLInputElement>(null);
 
   const [reviewForm, setReviewForm] = useState<ReviewForm>({
     name: "",
@@ -344,7 +394,7 @@ export default function Scan() {
       setHumanVerified(false);
 
       // Per-item detected items from server or built from candidates
-      const serverItems: DetectedItem[] = data.detectedItems ?? [];
+      const serverItems = data.detectedItems ?? [];
       if (serverItems.length > 0) {
         setDetectedItems(serverItems.map((item) => ({
           name: item.productName,
@@ -381,7 +431,18 @@ export default function Scan() {
       name: reviewForm.name, categoryName: reviewForm.categoryName,
       expiryDate: reviewForm.expiryDate, quantity: reviewForm.quantity,
     }),
-    onSuccess: () => { invalidateAll(); navigate("/pantry"); },
+    onSuccess: async () => {
+      saveProductAlert(reviewForm.name, reviewForm.expiryDate, alertTiming);
+      // Save captured image for pantry display
+      if (images.length > 0) {
+        try {
+          const dataUrl = await fileToDataUrl(images[0].file);
+          saveProductImage(reviewForm.name, dataUrl);
+        } catch { /* ignore */ }
+      }
+      invalidateAll();
+      navigate("/pantry");
+    },
     onError: (e) => setError(e instanceof Error ? e.message : "Add failed"),
   });
 
@@ -418,13 +479,20 @@ export default function Scan() {
   useEffect(() => {
     if (!autoStartedRef.current) {
       autoStartedRef.current = true;
-      if (navigator.mediaDevices?.getUserMedia) {
-        startCamera();
+      if (modeParam === "manual") {
+        setMode("manual");
+      } else if (modeParam === "upload") {
+        // Delay slightly so the ref is mounted
+        setTimeout(() => uploadInputRef.current?.click(), 300);
       } else {
-        setError("Camera not available in this browser. Use file upload instead.");
+        if (navigator.mediaDevices?.getUserMedia) {
+          startCamera();
+        } else {
+          setError("Camera not available in this browser. Use file upload instead.");
+        }
       }
     }
-  }, [startCamera]);
+  }, [startCamera, modeParam]);
 
   // Handle orientation changes to restart camera with correct resolution
   useEffect(() => {
@@ -477,8 +545,6 @@ export default function Scan() {
     processCaptured([captured]);
   }, [images.length, capturedPreviewUrl, stopCamera, cropCenterForOcr, processCaptured]);
 
-  const openDevicePicker = useCallback(() => uploadInputRef.current?.click(), []);
-
   const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(e.target.files ?? []);
     if (picked.length === 0) return;
@@ -513,103 +579,223 @@ export default function Scan() {
     setDetectedItems((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  const onProductImageChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (productImageUrl) URL.revokeObjectURL(productImageUrl);
+    setProductImageUrl(URL.createObjectURL(file));
+    setProductImageFile(file);
+    e.target.value = "";
+
+    // Run OCR on the uploaded image to auto-fill fields
+    setManualScanning(true);
+    setError("");
+    try {
+      const data = await api.scanMultiPreview(token!, [{ file, fileName: file.name }], 1);
+      const raw = data.rawText ?? "";
+      const mfgFromRaw = extractDateFromRaw(raw, /(?:mfg|mfd|manufactur(?:ed|ing)|packed(?:\s*on)?|prod(?:uction)?\s*date)\s*[:\-]?\s*([^\n]+)/i);
+      const expFromRaw = extractDateFromRaw(raw, /(?:exp|expiry|expires|use\s*by|best\s*before|use\s*before|consume\s*before)\s*[:\-]?\s*([^\n]+)/i);
+      const allRawDates = extractAllDatesFromRaw(raw);
+      const normalizedMfg = mfgFromRaw || normalizeApiDate(data.extracted.manufacturingDate);
+      let normalizedExp = expFromRaw || chooseBestFutureDate(allRawDates) || normalizeApiDate(data.extracted.expiryDate);
+      if (!normalizedExp) normalizedExp = extractBestBeforeExpiry(raw, normalizedMfg);
+
+      const detectedName = data.extracted.productName || "";
+      const detectedCategory = data.extracted.categoryName || (detectedName ? inferCategory(detectedName) : "General");
+      const fallbackExp = getCategoryFallbackDate(detectedCategory);
+
+      setReviewForm((prev) => ({
+        ...prev,
+        name: detectedName || prev.name,
+        categoryName: detectedCategory,
+        manufacturingDate: normalizedMfg || prev.manufacturingDate,
+        expiryDate: normalizedExp || fallbackExp,
+      }));
+    } catch {
+      // OCR failed silently — user can still fill manually
+    } finally {
+      setManualScanning(false);
+    }
+  }, [productImageUrl, token]);
+
+  // Auto-set category when product name changes
+  const handleNameChange = useCallback((value: string) => {
+    setReviewForm((s) => {
+      const cat = inferCategory(value);
+      return { ...s, name: value, categoryName: cat !== "General" ? cat : s.categoryName };
+    });
+  }, []);
+
+  // Save product image to localStorage on add
+  const handleManualAdd = useCallback(async () => {
+    if (productImageFile) {
+      const dataUrl = await fileToDataUrl(productImageFile);
+      saveProductImage(reviewForm.name, dataUrl);
+    }
+    addMutation.mutate();
+  }, [productImageFile, reviewForm.name, addMutation]);
+
+  // ── Manual entry mode: clean standalone form ──
+  if (mode === "manual") {
+    return (
+      <div className="flex flex-col h-full animate-in fade-in duration-300 pb-28">
+        <div className="flex items-center gap-3 px-6 pt-6 pb-4">
+          <button onClick={() => navigate(closePath)} className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+            <ArrowLeft className="h-5 w-5 text-foreground" />
+          </button>
+          <h1 className="text-xl font-bold text-foreground">Add Item</h1>
+        </div>
+
+        <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-6">
+          <div className="bg-card rounded-2xl border border-border p-5 grid gap-4 shadow-sm">
+            {/* Product image upload */}
+            <div className="flex flex-col items-center gap-2">
+              <button
+                onClick={() => productImageInputRef.current?.click()}
+                className="w-24 h-24 rounded-2xl border-2 border-dashed border-border bg-muted/30 flex flex-col items-center justify-center gap-1 hover:bg-muted/50 transition-colors overflow-hidden"
+              >
+                {productImageUrl ? (
+                  <img src={productImageUrl} alt="product" className="w-full h-full object-cover" />
+                ) : (
+                  <>
+                    <Upload className="h-6 w-6 text-muted-foreground" />
+                    <span className="text-[10px] text-muted-foreground font-medium">Add Photo</span>
+                  </>
+                )}
+              </button>
+              {manualScanning && (
+                <p className="text-[10px] text-primary font-medium animate-pulse">Scanning image...</p>
+              )}
+              {productImageUrl && !manualScanning && (
+                <button onClick={() => { if (productImageUrl) URL.revokeObjectURL(productImageUrl); setProductImageUrl(null); setProductImageFile(null); }} className="text-[10px] text-red-500 font-medium">
+                  Remove Photo
+                </button>
+              )}
+              <input ref={productImageInputRef} type="file" accept="image/*" className="hidden" onChange={onProductImageChange} />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Product Name</label>
+              <Input placeholder="e.g. Milk, Bread, Eggs" value={reviewForm.name} onChange={(e) => handleNameChange(e.target.value)} className="rounded-xl" />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Category</label>
+              <select className="h-10 rounded-xl border border-input px-3 text-sm bg-background text-foreground w-full" value={reviewForm.categoryName} onChange={(e) => setReviewForm((s) => ({ ...s, categoryName: e.target.value }))}>
+                {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Expiry Date</label>
+              <Input type="date" value={reviewForm.expiryDate} onChange={(e) => setReviewForm((s) => ({ ...s, expiryDate: e.target.value }))} className="rounded-xl" />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Quantity</label>
+              <Input type="number" min={1} value={reviewForm.quantity} onChange={(e) => setReviewForm((s) => ({ ...s, quantity: Number(e.target.value) || 1 }))} className="rounded-xl" />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium flex items-center gap-1 mb-1.5">
+                <Bell className="h-3 w-3" /> Expiry Alert
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { value: "7d", label: "7 Days Before" },
+                  { value: "3d", label: "3 Days Before" },
+                  { value: "1d", label: "1 Day Before" },
+                  { value: "on_expiry", label: "On Expiry Day" },
+                  { value: "none", label: "No Alert" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setAlertTiming(opt.value)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-colors ${
+                      alertTiming === opt.value
+                        ? "bg-primary/10 border-primary text-primary"
+                        : "bg-card border-border text-muted-foreground hover:bg-muted/50"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Button
+              onClick={handleManualAdd}
+              disabled={addMutation.isPending || !reviewForm.name.trim() || manualScanning}
+              className="rounded-2xl h-12 font-bold mt-1"
+            >
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              {addMutation.isPending ? "Saving..." : "Add to Pantry"}
+            </Button>
+
+            {error && <p className="text-xs text-red-600 text-center">{error}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Camera / Review mode ──
   return (
     <div className="flex-1 flex flex-col p-6 gap-6 h-full animate-in zoom-in duration-300 pb-28">
-      <div className="flex-1 bg-black rounded-[3rem] flex flex-col items-center justify-center text-white relative overflow-hidden shadow-2xl">
-        <div className="absolute inset-0 border-[2px] border-primary/40 m-12 rounded-[2rem]">
-          <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl" />
-          <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl" />
-          <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl" />
-          <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-xl" />
-          <div className="absolute left-4 right-4 h-0.5 bg-primary/80 shadow-[0_0_15px_rgba(46,204,113,0.8)] animate-scan" />
-        </div>
-
-        {mode === "camera" && streaming ? (
-          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" muted playsInline />
-        ) : capturedPreviewUrl ? (
-          <img src={capturedPreviewUrl} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
-        ) : (
-          <>
-            <Camera className="h-16 w-16 opacity-30 mb-4" />
-            <div className="text-center px-8 z-10 flex flex-col gap-2">
-              <p className="text-sm font-bold tracking-wide">Scan Product (Image {Math.min(images.length + 1, 4)}/4)</p>
-              <p className="text-[10px] opacity-60">You can add up to 4 images for better OCR accuracy.</p>
-            </div>
-          </>
-        )}
-
-        <div className="absolute bottom-10 flex gap-8 items-center px-8 w-full justify-between z-20">
-          <button onClick={openDevicePicker} className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center active:scale-95 transition-transform">
-            <LucideImage className="h-6 w-6" />
-          </button>
-          <button onClick={mode === "camera" && streaming ? captureSnapshot : startCamera} className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center p-1 active:scale-95 transition-transform">
-            <div className="w-full h-full rounded-full bg-white shadow-lg" />
-          </button>
-          <button onClick={() => { setCapturedPreviewUrl(null); startCamera(); }} className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center active:scale-95 transition-transform">
-            <Camera className="h-6 w-6" />
-          </button>
-        </div>
-
-        <Link to="/" className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center z-20">
-          <X className="h-5 w-5 text-white" />
-        </Link>
-
-        <input ref={uploadInputRef} type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={onFileChange} />
-        <canvas ref={canvasRef} className="hidden" />
-      </div>
-
-      {mode === "choose" && (
-        <div className="grid gap-3">
-          <Button className="rounded-2xl" onClick={startCamera}>Camera</Button>
-          <Button variant="outline" className="rounded-2xl" onClick={() => setMode("manual")}>Enter Manually</Button>
-          <Button variant="ghost" className="rounded-2xl" onClick={openDevicePicker}>Upload from Device</Button>
-        </div>
-      )}
-
-      {(mode === "camera" || mode === "choose") && (
-        <div className="grid gap-2 text-xs text-muted-foreground">
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => { stopCamera(); setMode("manual"); }}>Enter Manually</Button>
-            <Button variant="outline" className="flex-1" onClick={openDevicePicker}>Upload from Device</Button>
+      {mode !== "review" && (
+        <div className="flex-1 bg-black rounded-[3rem] flex flex-col items-center justify-center text-white relative overflow-hidden shadow-2xl">
+          <div className="absolute inset-0 border-[2px] border-primary/40 m-12 rounded-[2rem]">
+            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl" />
+            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl" />
+            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl" />
+            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-xl" />
+            <div className="absolute left-4 right-4 h-0.5 bg-primary/80 shadow-[0_0_15px_rgba(46,204,113,0.8)] animate-scan" />
           </div>
-          <p>Images added: {images.length}/4</p>
-          {images.length > 0 && <p className="truncate">Latest: {images[images.length - 1].name}</p>}
-          <Button onClick={() => previewMutation.mutate(images)} disabled={images.length === 0 || previewMutation.isPending}>
-            {previewMutation.isPending ? "Processing..." : "Process OCR"}
-          </Button>
-          {images.length > 0 && (
-            <Button variant="outline" onClick={() => { setImages([]); setCapturedPreviewUrl(null); startCamera(); }}>Retake</Button>
+
+          {streaming ? (
+            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" muted playsInline />
+          ) : capturedPreviewUrl ? (
+            <img src={capturedPreviewUrl} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
+          ) : (
+            <>
+              <Camera className="h-16 w-16 opacity-30 mb-4" />
+              <div className="text-center px-8 z-10 flex flex-col gap-2">
+                <p className="text-sm font-bold tracking-wide">Point camera at the product</p>
+                <p className="text-[10px] opacity-60">Capture the expiry date label clearly</p>
+              </div>
+            </>
           )}
+
+          <div className="absolute bottom-10 flex gap-8 items-center px-8 w-full justify-center z-20">
+            <button onClick={streaming ? captureSnapshot : startCamera} className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center p-1 active:scale-95 transition-transform">
+              <div className="w-full h-full rounded-full bg-card shadow-lg" />
+            </button>
+          </div>
+
+          <button onClick={() => navigate(closePath)} className="absolute top-6 right-6 w-10 h-10 rounded-full bg-card/10 backdrop-blur-md flex items-center justify-center z-20">
+            <X className="h-5 w-5 text-white" />
+          </button>
+
+          <input ref={uploadInputRef} type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={onFileChange} />
+          <canvas ref={canvasRef} className="hidden" />
         </div>
       )}
 
-      {mode === "manual" && (
-        <div className="bg-white rounded-2xl border p-4 grid gap-3">
-          <p className="text-sm font-semibold">Enter Product Manually</p>
-          <Input placeholder="Product name" value={reviewForm.name} onChange={(e) => setReviewForm((s) => ({ ...s, name: e.target.value }))} />
-          <select className="h-10 rounded-xl border px-3 text-sm bg-white" value={reviewForm.categoryName} onChange={(e) => setReviewForm((s) => ({ ...s, categoryName: e.target.value }))}>
-            {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-          </select>
-          <Input type="date" value={reviewForm.expiryDate} onChange={(e) => setReviewForm((s) => ({ ...s, expiryDate: e.target.value }))} />
-          <Input type="number" min={1} value={reviewForm.quantity} onChange={(e) => setReviewForm((s) => ({ ...s, quantity: Number(e.target.value) || 1 }))} />
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => { setMode("camera"); setCapturedPreviewUrl(null); startCamera(); }}>Back to Camera</Button>
-            <Button className="flex-1" onClick={() => { setPreview(null); setDetectedItems([]); setMode("review"); }}>Review & Confirm</Button>
-          </div>
-        </div>
+      {mode === "camera" && previewMutation.isPending && (
+        <div className="text-center text-sm text-muted-foreground font-medium animate-pulse">Processing image...</div>
       )}
 
       {mode === "review" && (
-        <div className="bg-white rounded-2xl border p-4 grid gap-3">
+        <div className="bg-card rounded-2xl border p-4 grid gap-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold flex items-center gap-2"><PencilLine className="h-4 w-4" />Review and Edit</p>
             {preview && <ConfidenceBadge score={confidenceScore} />}
           </div>
 
           {(needsHumanReview || confidenceScore < 40) && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-              <p className="text-[11px] text-amber-800">
+            <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl p-3 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+              <p className="text-[11px] text-amber-800 dark:text-amber-200">
                 {needsHumanReview ? "Some fields have low confidence. Please verify" : "Low confidence extraction. Please verify"}
                 {fieldConfidence && (
                   <span>
@@ -638,7 +824,7 @@ export default function Scan() {
             />
           </div>
           {productCandidates.length > 1 && (
-            <select className="h-10 rounded-xl border px-3 text-sm bg-white" value={reviewForm.name} onChange={(e) => setReviewForm((s) => ({ ...s, name: e.target.value }))}>
+            <select className="h-10 rounded-xl border border-input px-3 text-sm bg-background text-foreground" value={reviewForm.name} onChange={(e) => setReviewForm((s) => ({ ...s, name: e.target.value }))}>
               {productCandidates.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
           )}
@@ -653,7 +839,7 @@ export default function Scan() {
               )}
             </div>
             <select
-              className={`h-10 rounded-xl border px-3 text-sm bg-white w-full ${fieldConfidence?.categoryConfidence === "low" ? "border-red-400 ring-1 ring-red-200" : fieldConfidence?.categoryConfidence === "medium" ? "border-amber-400 ring-1 ring-amber-200" : ""}`}
+              className={`h-10 rounded-xl border border-input px-3 text-sm bg-background text-foreground w-full ${fieldConfidence?.categoryConfidence === "low" ? "border-red-400 ring-1 ring-red-200" : fieldConfidence?.categoryConfidence === "medium" ? "border-amber-400 ring-1 ring-amber-200" : ""}`}
               value={reviewForm.categoryName} onChange={(e) => setReviewForm((s) => ({ ...s, categoryName: e.target.value }))}
             >
               {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
@@ -683,6 +869,33 @@ export default function Scan() {
           </div>
 
           <Input type="number" min={1} value={reviewForm.quantity} onChange={(e) => setReviewForm((s) => ({ ...s, quantity: Number(e.target.value) || 1 }))} placeholder="Quantity" />
+
+          <div>
+            <label className="text-[10px] text-muted-foreground font-medium flex items-center gap-1 mb-1.5">
+              <Bell className="h-3 w-3" /> Expiry Alert
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { value: "7d", label: "7 Days Before" },
+                { value: "3d", label: "3 Days Before" },
+                { value: "1d", label: "1 Day Before" },
+                { value: "on_expiry", label: "On Expiry Day" },
+                { value: "none", label: "No Alert" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setAlertTiming(opt.value)}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-colors ${
+                    alertTiming === opt.value
+                      ? "bg-primary/10 border-primary text-primary"
+                      : "bg-card border-border text-muted-foreground hover:bg-muted/50"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="text-xs text-muted-foreground">
             <p>Days left: <strong className={daysLeft <= 3 ? "text-red-600" : daysLeft <= 7 ? "text-orange-600" : "text-green-600"}>{daysLeft}</strong></p>
@@ -735,7 +948,7 @@ export default function Scan() {
                   {detectedItems.map((item, idx) => (
                     <div key={idx} className="grid grid-cols-[1fr_auto_auto_auto] gap-1 items-center text-xs">
                       <Input value={item.name} onChange={(e) => updateDetectedItem(idx, "name", e.target.value)} className="h-8 text-xs" />
-                      <select value={item.categoryName} onChange={(e) => updateDetectedItem(idx, "categoryName", e.target.value)} className="h-8 rounded border px-1 text-[10px] bg-white w-20">
+                      <select value={item.categoryName} onChange={(e) => updateDetectedItem(idx, "categoryName", e.target.value)} className="h-8 rounded border border-input px-1 text-[10px] bg-background text-foreground w-20">
                         {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
                       </select>
                       <Input type="date" value={item.expiryDate} onChange={(e) => updateDetectedItem(idx, "expiryDate", e.target.value)} className="h-8 text-[10px] w-28" />

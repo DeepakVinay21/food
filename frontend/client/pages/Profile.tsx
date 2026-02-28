@@ -51,19 +51,21 @@ const PREF_KEY = "foodtrack_preferences";
 
 type Preferences = {
   enableAlerts: boolean;
-  dailySummary: boolean;
-  smartReminder: boolean;
   silentHours: boolean;
+  silentStart: string;
+  silentEnd: string;
   darkMode: boolean;
+  language: "English" | "Hindi" | "Telugu";
   reminderTiming: "7 Days" | "3 Days" | "1 Day" | "On Expiry";
 };
 
 const defaultPrefs: Preferences = {
   enableAlerts: true,
-  dailySummary: true,
-  smartReminder: true,
   silentHours: false,
+  silentStart: "22:00",
+  silentEnd: "07:00",
   darkMode: false,
+  language: "English",
   reminderTiming: "1 Day",
 };
 
@@ -80,7 +82,7 @@ const ProfileSection = ({ title, children, description }: { title: string; child
 const SettingItem = ({ icon: Icon, label, value, onClick, destructive, toggle, onToggle }: { icon: any; label: string; value?: string; onClick?: () => void; destructive?: boolean; toggle?: boolean; onToggle?: (v: boolean) => void }) => (
   <div className={cn("p-4 flex items-center justify-between transition-colors active:bg-muted/50", onClick && "cursor-pointer")} onClick={onClick}>
     <div className="flex items-center gap-3">
-      <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", destructive ? "bg-red-50 text-red-500" : "bg-muted/50 text-muted-foreground")}>
+      <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", destructive ? "bg-red-50 dark:bg-red-500/10 text-red-500" : "bg-muted/50 text-muted-foreground")}>
         <Icon className="h-5 w-5" />
       </div>
       <span className={cn("text-sm font-semibold text-foreground", destructive && "text-red-500")}>{label}</span>
@@ -161,7 +163,7 @@ const ChangePasswordDialog = ({ token }: { token: string }) => {
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 my-2">
-          {error && <div className="p-3 bg-red-100 text-red-600 font-medium text-xs rounded-xl border border-red-200">{error}</div>}
+          {error && <div className="p-3 bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-400 font-medium text-xs rounded-xl border border-red-200 dark:border-red-500/20">{error}</div>}
           <div className="space-y-2">
             <label className="text-sm font-medium">Current Password</label>
             <input
@@ -219,13 +221,13 @@ export default function Profile() {
       <div className="px-6 pt-8 pb-6 flex flex-col items-center gap-4">
         <div className="relative group cursor-pointer" onClick={() => navigate("/profile/edit")}>
           {profileQuery.data?.profilePhotoDataUrl ? (
-            <img src={profileQuery.data.profilePhotoDataUrl} alt="profile" className="w-24 h-24 rounded-[2.5rem] border-4 border-white shadow-xl object-cover" />
+            <img src={profileQuery.data.profilePhotoDataUrl} alt="profile" className="w-24 h-24 rounded-[2.5rem] border-4 border-card shadow-xl object-cover" />
           ) : (
-            <div className="w-24 h-24 rounded-[2.5rem] bg-primary/10 border-4 border-white shadow-xl flex items-center justify-center text-primary overflow-hidden">
+            <div className="w-24 h-24 rounded-[2.5rem] bg-primary/10 border-4 border-card shadow-xl flex items-center justify-center text-primary overflow-hidden">
               <span className="text-3xl font-bold uppercase tracking-widest">{(profileQuery.data?.firstName?.[0] ?? "U") + (profileQuery.data?.lastName?.[0] ?? "")}</span>
             </div>
           )}
-          <button className="absolute bottom-0 right-0 w-8 h-8 bg-primary text-white rounded-full border-2 border-white flex items-center justify-center shadow-lg active:scale-95 transition-transform">
+          <button className="absolute bottom-0 right-0 w-8 h-8 bg-primary text-white rounded-full border-2 border-card flex items-center justify-center shadow-lg active:scale-95 transition-transform">
             <User className="h-4 w-4" />
           </button>
         </div>
@@ -238,7 +240,6 @@ export default function Profile() {
 
       <ProfileSection title="Notifications" description="Control how and when you receive alerts.">
         <SettingItem icon={Bell} label="Enable Expiry Alerts" toggle={prefs.enableAlerts} onToggle={(v) => setPrefs((p) => ({ ...p, enableAlerts: v }))} />
-        <SettingItem icon={Clock} label="Daily Summary" value={prefs.dailySummary ? "09:00 AM" : "Off"} onClick={() => setPrefs((p) => ({ ...p, dailySummary: !p.dailySummary }))} />
         <div className="p-4 flex flex-col gap-3">
           <span className="text-xs font-bold text-muted-foreground/70 px-1 uppercase tracking-wider">Reminder Timing</span>
           <div className="flex flex-wrap gap-2">
@@ -256,12 +257,57 @@ export default function Profile() {
         </div>
         <SettingItem icon={Volume2} label="Notification Sound" value="Default" onClick={() => toast("Notification sound settings saved.")} />
         <SettingItem icon={Moon} label="Silent Hours" toggle={prefs.silentHours} onToggle={(v) => setPrefs((p) => ({ ...p, silentHours: v }))} />
-        <SettingItem icon={ShieldCheck} label="Smart AI Reminders" toggle={prefs.smartReminder} onToggle={(v) => setPrefs((p) => ({ ...p, smartReminder: v }))} />
+        {prefs.silentHours && (
+          <div className="p-4 flex flex-col gap-3 animate-in slide-in-from-top-2 duration-200">
+            <span className="text-xs font-bold text-muted-foreground/70 px-1 uppercase tracking-wider">Quiet Period</span>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 flex flex-col gap-1">
+                <label className="text-[10px] text-muted-foreground font-medium">From</label>
+                <input
+                  type="time"
+                  value={prefs.silentStart}
+                  onChange={(e) => setPrefs((p) => ({ ...p, silentStart: e.target.value }))}
+                  className="h-10 rounded-xl border border-input bg-background px-3 text-sm font-medium"
+                />
+              </div>
+              <span className="text-muted-foreground font-bold mt-4">—</span>
+              <div className="flex-1 flex flex-col gap-1">
+                <label className="text-[10px] text-muted-foreground font-medium">To</label>
+                <input
+                  type="time"
+                  value={prefs.silentEnd}
+                  onChange={(e) => setPrefs((p) => ({ ...p, silentEnd: e.target.value }))}
+                  className="h-10 rounded-xl border border-input bg-background px-3 text-sm font-medium"
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground">No alerts will be sent during this period.</p>
+          </div>
+        )}
       </ProfileSection>
 
       <ProfileSection title="App Preferences">
         <SettingItem icon={prefs.darkMode ? Moon : Sun} label="Dark Mode" toggle={prefs.darkMode} onToggle={(v) => setPrefs((p) => ({ ...p, darkMode: v }))} />
-        <SettingItem icon={Globe} label="Language" value="English (US)" onClick={() => toast("Language settings saved.")} />
+        <div className="p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-muted/50 text-muted-foreground">
+              <Globe className="h-5 w-5" />
+            </div>
+            <span className="text-sm font-semibold text-foreground">Language</span>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {(["English", "Hindi", "Telugu"] as const).map((lang) => (
+              <Badge
+                key={lang}
+                variant="outline"
+                onClick={() => { setPrefs((p) => ({ ...p, language: lang })); toast.success(`Language set to ${lang}`); }}
+                className={cn("rounded-xl px-4 h-9 border-border bg-muted/20 text-muted-foreground transition-all cursor-pointer active:scale-95 text-sm font-medium", prefs.language === lang ? "bg-primary/10 border-primary text-primary" : "")}
+              >
+                {lang}
+              </Badge>
+            ))}
+          </div>
+        </div>
       </ProfileSection>
 
       <ProfileSection title="Account & Security">

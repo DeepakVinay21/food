@@ -18,5 +18,6 @@ public interface IProductRepository
     Task<List<ProductBatch>> GetUserActiveBatchesAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<List<ProductBatch>> GetUserBatchesAsync(Guid userId, CancellationToken cancellationToken = default);
     Task UpdateBatchAsync(ProductBatch batch, CancellationToken cancellationToken = default);
+    Task DeleteBatchAsync(ProductBatch batch, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

@@ -43,4 +43,12 @@ public class ProductsController : ControllerBase
         await _productService.ConsumeBatchAsync(userId, request, cancellationToken);
         return NoContent();
     }
+
+    [HttpDelete("batch/{batchId:guid}")]
+    public async Task<IActionResult> DeleteBatch(Guid batchId, CancellationToken cancellationToken)
+    {
+        var userId = HttpContext.GetRequiredUserId();
+        await _productService.DeleteBatchAsync(userId, batchId, cancellationToken);
+        return NoContent();
+    }
 }

@@ -24,7 +24,7 @@ public class DashboardService
         var expiringSoon = allUserBatches.Count(b =>
             b.Status == BatchStatus.Active &&
             !b.IsDeleted &&
-            (b.ExpiryDate.DayNumber - today.DayNumber) is >= 0 and <= 7);
+            (b.ExpiryDate.DayNumber - today.DayNumber) is >= 0 and <= 2);
 
         var now = DateTime.UtcNow;
         var used = await _notificationRepository.CountUsedBatchesInMonthAsync(userId, now.Year, now.Month, cancellationToken);
