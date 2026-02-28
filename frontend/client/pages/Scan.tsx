@@ -325,7 +325,7 @@ export default function Scan() {
       } catch (err) {
         if (err instanceof DOMException) {
           if (err.name === "NotAllowedError") {
-            setError("Camera permission denied. Please allow camera access in your browser settings.");
+            setError("Camera permission denied. Please allow camera access in app settings.");
             return;
           }
           if (err.name === "NotFoundError") {
@@ -336,7 +336,7 @@ export default function Scan() {
         // Try next constraint set
       }
     }
-    setError("Unable to access camera. Check browser permissions or use file upload.");
+    setError("Unable to access camera. Check app permissions or use file upload.");
   }, []);
 
   const cropCenterForOcr = useCallback(async (source: CanvasImageSource, width: number, height: number) => {
@@ -488,7 +488,7 @@ export default function Scan() {
         if (navigator.mediaDevices?.getUserMedia) {
           startCamera();
         } else {
-          setError("Camera not available in this browser. Use file upload instead.");
+          setError("Camera not available. Use file upload instead.");
         }
       }
     }
@@ -967,7 +967,7 @@ export default function Scan() {
       )}
 
       {error && <p className="text-xs text-red-600 text-center">{error}</p>}
-      <p className="text-xs text-muted-foreground text-center">Tip: add multiple clear images for better ML and OCR quality.</p>
+      <p className="text-xs text-muted-foreground text-center">Tip: add multiple clear images for better scan quality.</p>
     </div>
   );
 }
