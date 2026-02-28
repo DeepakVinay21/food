@@ -219,5 +219,10 @@ static string ConvertDatabaseUrl(string databaseUrl)
     var username = userInfo[0];
     var password = userInfo.Length > 1 ? userInfo[1] : "";
 
-    return $"Host={host};Port={port};Database={database};Username={username};Password={password};SSL Mode=Require;Trust Server Certificate=true";
+    // Use SSL for external hosts (e.g. Render), skip for local/Docker
+    var sslSuffix = host.Contains(".render.com", StringComparison.OrdinalIgnoreCase)
+        ? ";SSL Mode=Require;Trust Server Certificate=true"
+        : "";
+
+    return $"Host={host};Port={port};Database={database};Username={username};Password={password}{sslSuffix}";
 }

@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: freshtrack
+      POSTGRES_USER: freshtrack_user
+      POSTGRES_PASSWORD: freshtrack_local_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U freshtrack_user -d freshtrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://freshtrack_user:freshtrack_local_pass@db:5432/freshtrack"
+      GEMINI_API_KEY: "AIzaSyC-fIcAYKQnDMqk22RbLMQn6_RS9MtRJ40"
+      JWT_SECRET: "FreshTrack-Local-Dev-Secret-Key-32chars!"
+      PORT: "5001"
+      ASPNETCORE_ENVIRONMENT: "Production"
+
+volumes:
+  pgdata:
