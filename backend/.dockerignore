@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/logs/
+**/.vs/
+**/.vscode/
+**/node_modules/
+*.user
+*.suo
+.git
+.gitignore
+Dockerfile
+.dockerignore

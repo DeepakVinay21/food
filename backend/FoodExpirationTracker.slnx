@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="FoodExpirationTracker.Api/FoodExpirationTracker.Api.csproj" />
+  <Project Path="FoodExpirationTracker.Application/FoodExpirationTracker.Application.csproj" />
+  <Project Path="FoodExpirationTracker.Domain/FoodExpirationTracker.Domain.csproj" />
+  <Project Path="FoodExpirationTracker.Infrastructure/FoodExpirationTracker.Infrastructure.csproj" />
+</Solution>

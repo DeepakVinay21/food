@@ -1,0 +1,139 @@
+/** @import must precede all other statements */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /**
+   * Tailwind CSS theme
+   * tailwind.config.ts expects the following color variables to be expressed as HSL values.
+   * A different format will require also updating the theme in tailwind.config.ts.
+  */
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 210 29% 24%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 210 29% 24%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 29% 24%;
+
+    --primary: 145 63% 49%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 204 70% 53%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 210 20% 94%;
+    --muted-foreground: 180 7% 52%;
+
+    --accent: 204 70% 53%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 6 78% 57%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 37 90% 51%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 210 20% 90%;
+    --input: 210 20% 90%;
+    --ring: 145 63% 49%;
+
+    --radius: 1rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 210 29% 24%;
+    --sidebar-primary: 145 63% 49%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 20% 94%;
+    --sidebar-accent-foreground: 145 63% 49%;
+    --sidebar-border: 210 20% 90%;
+    --sidebar-ring: 145 63% 49%;
+  }
+
+  .dark {
+    --background: 210 29% 24%;
+    --foreground: 210 20% 98%;
+
+    --card: 210 29% 20%;
+    --card-foreground: 210 20% 98%;
+
+    --popover: 210 29% 20%;
+    --popover-foreground: 210 20% 98%;
+
+    --primary: 145 63% 49%;
+    --primary-foreground: 210 29% 24%;
+
+    --secondary: 204 70% 53%;
+    --secondary-foreground: 210 29% 24%;
+
+    --muted: 210 29% 30%;
+    --muted-foreground: 180 7% 70%;
+
+    --accent: 204 70% 53%;
+    --accent-foreground: 210 29% 24%;
+
+    --destructive: 6 78% 57%;
+    --destructive-foreground: 210 20% 98%;
+
+    --warning: 37 90% 51%;
+    --warning-foreground: 210 20% 98%;
+
+    --border: 210 29% 35%;
+    --input: 210 29% 35%;
+    --ring: 145 63% 49%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  :where(p, span, li, h1, h2, h3, h4, h5, h6, a, button, label, td, th) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  pre,
+  code {
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-full;
+  }
+
+  @keyframes scan {
+    0% { top: 10%; }
+    50% { top: 90%; }
+    100% { top: 10%; }
+  }
+
+  .animate-scan {
+    animation: scan 3s ease-in-out infinite;
+  }
+}

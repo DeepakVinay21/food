@@ -1,0 +1,266 @@
+:root {
+  --bg: #f4f1e8;
+  --ink: #101413;
+  --brand: #1f8f5f;
+  --brand-dark: #146744;
+  --panel: #fffdf7;
+  --line: #d8d2c2;
+  --warn: #cb5f23;
+  --muted: #55615d;
+  --shadow: 0 14px 34px rgba(16, 20, 19, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+  background: radial-gradient(circle at 10% 10%, #fff7dc, var(--bg));
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+.bg-orb {
+  position: fixed;
+  border-radius: 999px;
+  filter: blur(42px);
+  z-index: 0;
+  opacity: 0.45;
+}
+
+.orb-a {
+  width: 260px;
+  height: 260px;
+  background: #ffb267;
+  top: -80px;
+  right: -60px;
+}
+
+.orb-b {
+  width: 320px;
+  height: 320px;
+  background: #89d6a9;
+  left: -120px;
+  bottom: -100px;
+}
+
+.app-shell {
+  position: relative;
+  z-index: 1;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px 14px 40px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--brand-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 11px;
+}
+
+h1, h2, h3, h4, p {
+  margin: 0;
+}
+
+.brand-wrap h1 {
+  font-size: clamp(22px, 4vw, 36px);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.auth-panel {
+  max-width: 480px;
+  margin: 22px auto;
+}
+
+.auth-tabs,
+.section-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.auth-tab,
+.section-tab,
+.btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-tab.active,
+.section-tab.active {
+  background: var(--ink);
+  color: #fff;
+}
+
+.auth-form,
+.grid-form {
+  display: grid;
+  gap: 10px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+input,
+textarea {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  font: inherit;
+  background: #fff;
+}
+
+.btn.primary {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+
+.btn.ghost {
+  background: transparent;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.chip {
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.metrics-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.metric-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+}
+
+.metric-card.alert {
+  border-color: var(--warn);
+}
+
+.metric-card h2 {
+  margin-top: 6px;
+  font-size: 30px;
+}
+
+.tab-panel {
+  margin-top: 10px;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.filter-row {
+  display: flex;
+  gap: 8px;
+}
+
+.stack {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.product-card,
+.recipe-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+}
+
+.product-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+}
+
+.batch-list {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.batch-item {
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  padding: 10px 16px;
+  font-size: 13px;
+}
+
+@media (min-width: 768px) {
+  .app-shell {
+    padding: 34px 22px 60px;
+  }
+
+  .grid-form {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .grid-form button,
+  .grid-form label:has(textarea) {
+    grid-column: 1 / -1;
+  }
+}

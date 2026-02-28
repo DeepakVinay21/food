@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <UseSharedCompilation>false</UseSharedCompilation>
+    <RunAnalyzers>false</RunAnalyzers>
+  </PropertyGroup>
+</Project>

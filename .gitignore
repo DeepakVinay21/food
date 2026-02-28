@@ -1,0 +1,28 @@
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+*.vs/
+logs/
+
+# Node
+node_modules/
+dist/
+.output/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Firebase service account (secret)
+firebase-service-account.json
+
+# IDE
+.idea/
+.vscode/
+*.swp

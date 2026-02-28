@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "backend/FoodExpirationTracker.Api"],
+      "port": 5001
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--dir", "frontend", "dev"],
+      "port": 8080
+    },
+    {
+      "name": "ocr-service",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "-f", "backend/ocr-service/docker-compose.yml", "up", "--build"],
+      "port": 8090
+    }
+  ]
+}
