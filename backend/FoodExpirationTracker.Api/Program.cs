@@ -139,8 +139,9 @@ builder.Services.AddCors(options =>
                         || (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31);
                 }
 
-                // Allow Render deployment URLs
-                if (uri.Host.EndsWith(".onrender.com", StringComparison.OrdinalIgnoreCase))
+                // Allow Render and Vercel deployment URLs
+                if (uri.Host.EndsWith(".onrender.com", StringComparison.OrdinalIgnoreCase)
+                    || uri.Host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
@@ -219,10 +220,11 @@ static string ConvertDatabaseUrl(string databaseUrl)
     var username = userInfo[0];
     var password = userInfo.Length > 1 ? userInfo[1] : "";
 
-    // Use SSL for external hosts (e.g. Render), skip for local/Docker
-    var sslSuffix = host.Contains(".render.com", StringComparison.OrdinalIgnoreCase)
-        ? ";SSL Mode=Require;Trust Server Certificate=true"
-        : "";
+    // Use SSL for external hosts (Render, Neon, etc.), skip for local/Docker
+    var isExternal = host.Contains(".render.com", StringComparison.OrdinalIgnoreCase)
+        || host.Contains(".neon.tech", StringComparison.OrdinalIgnoreCase)
+        || host.Contains(".neon.cloud", StringComparison.OrdinalIgnoreCase);
+    var sslSuffix = isExternal ? ";SSL Mode=Require;Trust Server Certificate=true" : "";
 
     return $"Host={host};Port={port};Database={database};Username={username};Password={password}{sslSuffix}";
 }
