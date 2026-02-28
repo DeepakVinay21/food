@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Bell,
+  BellRing,
   ChevronRight,
   Globe,
   Lock,
@@ -18,6 +19,8 @@ import {
   Volume2,
   Sun,
 } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import {
   Dialog,
   DialogContent,
@@ -200,6 +203,117 @@ const ChangePasswordDialog = ({ token }: { token: string }) => {
   );
 };
 
+const TestNotificationButton = ({ token }: { token: string }) => {
+  const [testing, setTesting] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+
+  const sendTestNotification = async () => {
+    setTesting(true);
+    setCountdown(5);
+
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // Request permission
+        const perm = await LocalNotifications.requestPermissions();
+        if (perm.display !== "granted") {
+          toast.error("Notification permission denied. Enable it in app settings.");
+          setTesting(false);
+          return;
+        }
+
+        // Schedule local notification in 5 seconds
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              id: Date.now(),
+              title: "Food Expiry Reminder",
+              body: "Test: Your Milk expires tomorrow! Check your pantry.",
+              schedule: { at: new Date(Date.now() + 5000) },
+              sound: "default",
+              smallIcon: "ic_launcher",
+              largeIcon: "ic_launcher",
+            },
+          ],
+        });
+
+        // Countdown timer
+        let c = 5;
+        const interval = setInterval(() => {
+          c--;
+          setCountdown(c);
+          if (c <= 0) {
+            clearInterval(interval);
+            setTesting(false);
+            toast.success("Notification sent! Check your notification tray.");
+          }
+        }, 1000);
+      } else {
+        // Web fallback: use browser Notification API
+        if ("Notification" in window) {
+          const perm = await Notification.requestPermission();
+          if (perm === "granted") {
+            setTimeout(() => {
+              new Notification("Food Expiry Reminder", {
+                body: "Test: Your Milk expires tomorrow! Check your pantry.",
+                icon: "/favicon.ico",
+              });
+              setTesting(false);
+              toast.success("Notification sent!");
+            }, 5000);
+
+            let c = 5;
+            const interval = setInterval(() => {
+              c--;
+              setCountdown(c);
+              if (c <= 0) clearInterval(interval);
+            }, 1000);
+          } else {
+            toast.error("Notification permission denied.");
+            setTesting(false);
+          }
+        } else {
+          toast.error("Notifications not supported.");
+          setTesting(false);
+        }
+      }
+
+      // Also trigger backend daily job to test server-side notifications
+      try {
+        await api.runNotifications(token);
+      } catch {
+        // Backend notification is optional for this test
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send test notification.");
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div
+      className="p-4 flex items-center justify-between transition-colors active:bg-muted/50 cursor-pointer"
+      onClick={!testing ? sendTestNotification : undefined}
+    >
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-green-50 dark:bg-green-500/10 text-green-600">
+          <BellRing className="h-5 w-5" />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-sm font-semibold text-foreground">Test Notification</span>
+          <span className="text-[10px] text-muted-foreground">Sends a test alert in 5 seconds</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {testing ? (
+          <span className="text-xs font-bold text-primary animate-pulse">{countdown}s</span>
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function Profile() {
   const { token, logout } = useAuth();
   const navigate = useNavigate();
@@ -284,6 +398,7 @@ export default function Profile() {
             <p className="text-[10px] text-muted-foreground">No alerts will be sent during this period.</p>
           </div>
         )}
+        <TestNotificationButton token={token!} />
       </ProfileSection>
 
       <ProfileSection title="App Preferences">
