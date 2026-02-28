@@ -26,3 +26,4 @@ firebase-service-account.json
 .idea/
 .vscode/
 *.swp
+.github/
