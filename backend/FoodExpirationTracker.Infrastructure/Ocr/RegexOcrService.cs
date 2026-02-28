@@ -7,8 +7,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 using FoodExpirationTracker.Application.Abstractions;
 using FoodExpirationTracker.Application.DTOs;
-using Microsoft.ML.OnnxRuntime;
-using Microsoft.ML.OnnxRuntime.Tensors;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
@@ -39,23 +37,8 @@ public class RegexOcrService : IOcrService
         @"best\s*before\s*(?:the\s*)?end\s*(?:of)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*(\d{2,4})",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private readonly InferenceSession? _onnxSession;
-    private readonly string[] _labels;
-
     public RegexOcrService()
     {
-        var modelPath = Path.Combine(AppContext.BaseDirectory, "Models", "mobilenetv2-12.onnx");
-        var labelsPath = Path.Combine(AppContext.BaseDirectory, "Models", "synset.txt");
-
-        if (File.Exists(modelPath) && File.Exists(labelsPath))
-        {
-            _onnxSession = new InferenceSession(modelPath);
-            _labels = File.ReadAllLines(labelsPath);
-        }
-        else
-        {
-            _labels = [];
-        }
     }
 
     public OcrScanResult ParseText(string rawText, byte[]? imageBytes = null)
@@ -327,52 +310,10 @@ public class RegexOcrService : IOcrService
         }
     }
 
-    private (string ProductName, string CategoryName)? PredictProductFromImage(byte[] imageBytes)
+    private static (string ProductName, string CategoryName)? PredictProductFromImage(byte[] imageBytes)
     {
-        if (_onnxSession is null || _labels.Length == 0)
-        {
-            return null;
-        }
-
-        try
-        {
-            using var image = Image.Load<Rgb24>(imageBytes);
-            image.Mutate(x => x.Resize(new ResizeOptions { Size = new Size(224, 224), Mode = ResizeMode.Stretch }));
-
-            var input = new DenseTensor<float>(new[] { 1, 3, 224, 224 });
-
-            image.ProcessPixelRows(accessor =>
-            {
-                for (var y = 0; y < 224; y++)
-                {
-                    var row = accessor.GetRowSpan(y);
-                    for (var x = 0; x < 224; x++)
-                    {
-                        var p = row[x];
-                        input[0, 0, y, x] = (p.R / 255f - 0.485f) / 0.229f;
-                        input[0, 1, y, x] = (p.G / 255f - 0.456f) / 0.224f;
-                        input[0, 2, y, x] = (p.B / 255f - 0.406f) / 0.225f;
-                    }
-                }
-            });
-
-            var inputName = _onnxSession.InputMetadata.Keys.First();
-            var results = _onnxSession.Run([NamedOnnxValue.CreateFromTensor(inputName, input)]);
-            var scores = results.First().AsEnumerable<float>().ToArray();
-
-            var maxScore = scores.Max();
-            if (maxScore < 0.3f) return null;
-
-            var topIndex = Array.IndexOf(scores, maxScore);
-            if (topIndex < 0 || topIndex >= _labels.Length) return null;
-
-            var label = _labels[topIndex].ToLowerInvariant();
-            return MapLabelToProduct(label);
-        }
-        catch
-        {
-            return null;
-        }
+        // ONNX model removed to reduce memory usage on free-tier hosting
+        return null;
     }
 
     private static (string ProductName, string CategoryName)? MapLabelToProduct(string label)
