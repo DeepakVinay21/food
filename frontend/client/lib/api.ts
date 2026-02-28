@@ -170,9 +170,21 @@ function makeMultiImageForm(images: Array<{ file: Blob | File; fileName: string 
 
 export const api = {
   register: (body: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string; age?: number | null }) =>
-    request<AuthResponse>("/api/v1/auth/register", {
+    request<{ message: string }>("/api/v1/auth/register", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+
+  verify: (email: string, code: string) =>
+    request<AuthResponse>("/api/v1/auth/verify", {
+      method: "POST",
+      body: JSON.stringify({ email, code }),
+    }),
+
+  resend: (email: string) =>
+    request<{ message: string }>("/api/v1/auth/resend", {
+      method: "POST",
+      body: JSON.stringify({ email }),
     }),
 
   login: (email: string, password: string) =>

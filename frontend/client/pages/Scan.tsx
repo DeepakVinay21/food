@@ -6,6 +6,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { api, OcrImagePreviewResponse, FieldConfidence } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 type ScanMode = "choose" | "camera" | "manual" | "review";
 
@@ -225,8 +226,11 @@ export default function Scan() {
   const closePath = sourceParam === "pantry" ? "/pantry" : "/";
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const mountedRef = useRef(true);
   const autoStartedRef = useRef(false);
 
   const [mode, setMode] = useState<ScanMode>("camera");
@@ -269,8 +273,11 @@ export default function Scan() {
   }, [qc]);
 
   const stopCamera = useCallback(() => {
-    const stream = videoRef.current?.srcObject as MediaStream | null;
-    if (stream) stream.getTracks().forEach((t) => t.stop());
+    // Stop all tracks from the stored stream ref (works even after unmount)
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
     if (videoRef.current) videoRef.current.srcObject = null;
     setStreaming(false);
   }, []);
@@ -294,9 +301,15 @@ export default function Scan() {
     for (const constraint of constraints) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia(constraint);
+        if (!mountedRef.current) {
+          // Component unmounted while waiting for camera — stop immediately
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          // Wait for metadata before playing to improve cross-browser reliability
+          // Wait for metadata before playing
           await new Promise<void>((resolve) => {
             const video = videoRef.current!;
             const onLoaded = () => { video.removeEventListener("loadedmetadata", onLoaded); resolve(); };
@@ -308,12 +321,11 @@ export default function Scan() {
           stream.getTracks().forEach((track) => {
             track.onended = () => {
               setStreaming(false);
-              // Attempt auto-recovery if page is visible
+              // Only auto-recover if still mounted and on camera mode
+              if (!mountedRef.current) return;
               setTimeout(() => {
-                if (document.visibilityState === "visible") {
+                if (mountedRef.current && document.visibilityState === "visible") {
                   startCamera();
-                } else {
-                  setError("Camera stream ended. Tap to restart.");
                 }
               }, 1000);
             };
@@ -469,12 +481,25 @@ export default function Scan() {
 
   const confidenceScore = (preview?.extracted as any)?.confidenceScore ?? (preview?.extracted?.isConfidenceLow ? 25 : 70);
 
+  // Mark mounted/unmounted and ensure camera is stopped on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // Directly stop tracks from ref to guarantee cleanup even if videoRef is null
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) videoRef.current.srcObject = null;
+    };
+  }, []);
+
   useEffect(() => {
     return () => {
-      stopCamera();
       if (capturedPreviewUrl) URL.revokeObjectURL(capturedPreviewUrl);
     };
-  }, [capturedPreviewUrl, stopCamera]);
+  }, [capturedPreviewUrl]);
 
   useEffect(() => {
     if (!autoStartedRef.current) {
@@ -497,9 +522,9 @@ export default function Scan() {
   // Handle orientation changes to restart camera with correct resolution
   useEffect(() => {
     const handleOrientationChange = () => {
-      if (streaming && videoRef.current?.srcObject) {
+      if (streaming && mountedRef.current && videoRef.current?.srcObject) {
         stopCamera();
-        setTimeout(() => startCamera(), 300);
+        setTimeout(() => { if (mountedRef.current) startCamera(); }, 300);
       }
     };
     window.addEventListener("orientationchange", handleOrientationChange);
@@ -510,10 +535,10 @@ export default function Scan() {
     };
   }, [streaming, stopCamera, startCamera]);
 
-  // Auto-recover camera when returning from background/lock screen
+  // Auto-recover camera when returning from background/lock screen (only if still on camera mode)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && mode === "camera" && !streaming) {
+      if (document.visibilityState === "visible" && mode === "camera" && !streaming && mountedRef.current) {
         startCamera();
       }
     };
@@ -752,11 +777,10 @@ export default function Scan() {
             <div className="absolute left-4 right-4 h-0.5 bg-primary/80 shadow-[0_0_15px_rgba(46,204,113,0.8)] animate-scan" />
           </div>
 
-          {streaming ? (
-            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" muted playsInline />
-          ) : capturedPreviewUrl ? (
+          <video ref={videoRef} autoPlay muted playsInline className={cn("absolute inset-0 w-full h-full object-cover", !streaming && "hidden")} />
+          {!streaming && capturedPreviewUrl ? (
             <img src={capturedPreviewUrl} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
-          ) : (
+          ) : !streaming ? (
             <>
               <Camera className="h-16 w-16 opacity-30 mb-4" />
               <div className="text-center px-8 z-10 flex flex-col gap-2">
@@ -764,12 +788,16 @@ export default function Scan() {
                 <p className="text-[10px] opacity-60">Capture the expiry date label clearly</p>
               </div>
             </>
-          )}
+          ) : null}
 
           <div className="absolute bottom-10 flex gap-8 items-center px-8 w-full justify-center z-20">
+            <button onClick={() => galleryInputRef.current?.click()} className="w-12 h-12 rounded-full bg-card/20 backdrop-blur-md flex items-center justify-center active:scale-95 transition-transform">
+              <Upload className="h-5 w-5 text-white" />
+            </button>
             <button onClick={streaming ? captureSnapshot : startCamera} className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center p-1 active:scale-95 transition-transform">
               <div className="w-full h-full rounded-full bg-card shadow-lg" />
             </button>
+            <div className="w-12 h-12" />
           </div>
 
           <button onClick={() => navigate(closePath)} className="absolute top-6 right-6 w-10 h-10 rounded-full bg-card/10 backdrop-blur-md flex items-center justify-center z-20">
@@ -777,6 +805,7 @@ export default function Scan() {
           </button>
 
           <input ref={uploadInputRef} type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={onFileChange} />
+          <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden" onChange={onFileChange} />
           <canvas ref={canvasRef} className="hidden" />
         </div>
       )}

@@ -122,7 +122,7 @@ export default function Index() {
     return allProductBatches.filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [allProductBatches, searchQuery]);
 
-  const suggestion = recipesQuery.data?.find((r) => r.matchPercent >= 50);
+  const suggestion = recipesQuery.data?.find((r) => r.matchPercent >= 70);
   const expiredCount = allProductBatches.filter((p) => p.status === "expired").length;
 
   return (
@@ -133,7 +133,7 @@ export default function Index() {
       </div>
 
       <div className="px-6 grid grid-cols-3 gap-3">
-        <SummaryCard title="Total Items" count={dashboardQuery.data?.totalProducts ?? 0} color="text-primary" bg="bg-primary/10" />
+        <SummaryCard title="Total Items" count={(productsQuery.data?.items ?? []).filter(p => p.batches.length > 0).length} color="text-primary" bg="bg-primary/10" />
         <SummaryCard title="Expiring Soon" count={dashboardQuery.data?.expiringSoonCount ?? 0} color="text-orange-600 dark:text-orange-400" bg="bg-orange-50 dark:bg-orange-500/10" />
         <SummaryCard title="Expired" count={expiredCount} color="text-red-600 dark:text-red-400" bg="bg-red-50 dark:bg-red-500/10" />
       </div>

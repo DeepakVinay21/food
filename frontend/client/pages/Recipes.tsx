@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChefHat, Clock, Sparkles, ChevronRight, Bookmark, X, ShoppingCart } from "lucide-react";
+import { ChefHat, Clock, Sparkles, ChevronRight, X, ShoppingCart } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -11,8 +11,6 @@ import { useNavigate } from "react-router-dom";
 const RecipeCard = ({ name, mealType, region, match, time, summary, image, featured, onClick }: {
   name: string; mealType: string; region: string; match: number; time: string; summary: string; image: string; featured?: boolean; onClick?: () => void;
 }) => {
-  const [bookmarked, setBookmarked] = useState(false);
-
   return (
     <div
       onClick={onClick}
@@ -34,12 +32,6 @@ const RecipeCard = ({ name, mealType, region, match, time, summary, image, featu
             </Badge>
           )}
         </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); setBookmarked(!bookmarked); }}
-          className="absolute top-4 right-4 w-10 h-10 rounded-full bg-card/20 backdrop-blur-md flex items-center justify-center text-white active:bg-card active:text-primary transition-colors"
-        >
-          <Bookmark className={cn("h-5 w-5", bookmarked && "fill-white text-white")} />
-        </button>
         <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
           <div className="flex items-center gap-1.5 text-xs font-bold bg-black/30 backdrop-blur-sm px-3 py-1.5 rounded-full">
             <Clock className="h-3.5 w-3.5" />{time}
@@ -76,7 +68,7 @@ export default function Recipes() {
     enabled: !!token && !pantryEmpty,
   });
 
-  const recipes = (recipesQuery.data ?? []).filter((r) => r.matchPercent >= 50);
+  const recipes = (recipesQuery.data ?? []).filter((r) => r.matchPercent >= 70);
   const [selectedRecipe, setSelectedRecipe] = useState<RecipeSuggestion | null>(null);
   const [isCooking, setIsCooking] = useState(false);
 
@@ -124,7 +116,7 @@ export default function Recipes() {
             <ChefHat className="h-8 w-8 text-muted-foreground/40" />
           </div>
           <h3 className="font-bold text-foreground">No matching recipes</h3>
-          <p className="text-sm text-muted-foreground max-w-[260px]">No recipes with 50%+ ingredient match. Try adding more items to your pantry.</p>
+          <p className="text-sm text-muted-foreground max-w-[260px]">No recipes with 70%+ ingredient match. Try adding more items to your pantry.</p>
         </div>
       )}
 

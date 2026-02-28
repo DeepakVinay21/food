@@ -10,7 +10,6 @@ export default function ProfileEdit() {
   const navigate = useNavigate();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [age, setAge] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -18,7 +17,6 @@ export default function ProfileEdit() {
     api.profile(token!).then((p) => {
       setFirstName(p.firstName || "");
       setLastName(p.lastName || "");
-      setAge(p.age ? String(p.age) : "");
       setPhoto(p.profilePhotoDataUrl ?? null);
     }).catch(() => {});
   }, [token]);
@@ -38,7 +36,6 @@ export default function ProfileEdit() {
       await api.updateProfile(token!, {
         firstName,
         lastName,
-        age: age ? Number(age) : null,
         profilePhotoDataUrl: photo,
       });
       navigate("/profile");
@@ -55,7 +52,6 @@ export default function ProfileEdit() {
         <Input type="file" accept="image/*" onChange={onPickPhoto} />
         <Input placeholder="First name" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
         <Input placeholder="Last name" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
-        <Input placeholder="Age" type="number" min={1} value={age} onChange={(e) => setAge(e.target.value)} />
         {error && <p className="text-xs text-red-600">{error}</p>}
         <Button type="submit">Save Profile</Button>
       </form>

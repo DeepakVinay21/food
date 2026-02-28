@@ -18,6 +18,7 @@ public class AppDbContext : DbContext
     public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
     public DbSet<OcrCorrectionLog> OcrCorrectionLogs => Set<OcrCorrectionLog>();
     public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
+    public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +45,7 @@ public class AppDbContext : DbContext
         ConfigureRecipeIngredient(modelBuilder);
         ConfigureOcrCorrectionLog(modelBuilder);
         ConfigureDeviceToken(modelBuilder);
+        ConfigureEmailVerification(modelBuilder);
 
         SeedCategories(modelBuilder);
     }
@@ -210,6 +212,22 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(e => e.Token).IsUnique();
             entity.HasIndex(e => e.UserId);
+        });
+    }
+
+    private static void ConfigureEmailVerification(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<EmailVerification>(entity =>
+        {
+            entity.ToTable("EmailVerifications");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Email).HasMaxLength(320).IsRequired();
+            entity.Property(e => e.Code).HasMaxLength(6).IsRequired();
+            entity.Property(e => e.PasswordHash).IsRequired();
+            entity.Property(e => e.FirstName).HasMaxLength(100);
+            entity.Property(e => e.LastName).HasMaxLength(100);
+
+            entity.HasIndex(e => e.Email).IsUnique();
         });
     }
 

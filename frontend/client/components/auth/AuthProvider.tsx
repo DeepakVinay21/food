@@ -1,6 +1,7 @@
 import * as React from "react";
 import { api, AuthResponse } from "@/lib/api";
 import { initPushNotifications } from "@/lib/pushNotifications";
+import { scheduleAllNotifications, setupNotificationListeners } from "@/lib/notificationScheduler";
 
 type AuthContextValue = {
   token: string | null;
@@ -8,6 +9,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (payload: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string; age?: number | null }) => Promise<void>;
+  verify: (email: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -27,10 +29,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(EMAIL_KEY, result.email);
   };
 
-  // Register for push notifications when already logged in on mount
+  // Register for push notifications + schedule local notifications on mount
   React.useEffect(() => {
     if (token) {
       initPushNotifications(token).catch(() => {});
+      setupNotificationListeners();
+
+      // Load prefs and schedule notifications
+      const PREF_KEY = "foodtrack_preferences";
+      let prefs = { enableAlerts: true, silentHours: false, silentStart: "22:00", silentEnd: "07:00", reminderTiming: "1 Day" as const, notificationTime: "09:00" };
+      try {
+        const raw = localStorage.getItem(PREF_KEY);
+        if (raw) prefs = { ...prefs, ...JSON.parse(raw) };
+      } catch {}
+
+      api.products(token).then((res) => {
+        scheduleAllNotifications(res.items, prefs);
+      }).catch(() => {});
     }
   }, [token]);
 
@@ -42,6 +57,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = async (payload: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string; age?: number | null }) => {
     await api.register(payload);
+  };
+
+  const verify = async (userEmail: string, code: string) => {
+    const result = await api.verify(userEmail, code);
+    save(result);
+    initPushNotifications(result.accessToken).catch(() => {});
   };
 
   const logout = async () => {
@@ -66,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!token,
         login,
         register,
+        verify,
         logout,
       }}
     >

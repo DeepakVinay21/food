@@ -3,8 +3,8 @@ import { Home, ClipboardList, Scan, Utensils, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NavItem = ({ to, icon: Icon, label, active }: { to: string, icon: any, label: string, active: boolean }) => (
-  <Link 
-    to={to} 
+  <Link
+    to={to}
     className={cn(
       "flex flex-col items-center justify-center gap-1 py-1 px-1 transition-colors",
       active ? "text-primary" : "text-muted-foreground hover:text-foreground"

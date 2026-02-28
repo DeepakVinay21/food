@@ -19,6 +19,7 @@ import { AuthProvider } from "./components/auth/AuthProvider";
 import { RequireAuth } from "./components/auth/RequireAuth";
 import ChangePassword from "./pages/ChangePassword";
 import ProfileEdit from "./pages/ProfileEdit";
+import VerifyEmail from "./pages/VerifyEmail";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ const App = () => (
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
 
               <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
               <Route path="/pantry" element={<RequireAuth><Pantry /></RequireAuth>} />

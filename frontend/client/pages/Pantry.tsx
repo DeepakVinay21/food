@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, Product } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -325,6 +325,13 @@ export default function Pantry() {
     const cats = (pantryQuery.data?.items ?? []).map((p) => p.categoryName).filter(Boolean);
     return ["All Categories", ...Array.from(new Set(cats))];
   }, [pantryQuery.data]);
+
+  // Reset category filter when selected category no longer exists in data
+  useEffect(() => {
+    if (selectedCategory !== "All Categories" && !categories.includes(selectedCategory)) {
+      setSelectedCategory("All Categories");
+    }
+  }, [categories, selectedCategory]);
 
   const deleteBatch = useMutation({
     mutationFn: (batchId: string) => api.deleteBatch(token!, batchId),

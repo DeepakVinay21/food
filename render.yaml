@@ -17,5 +17,9 @@ services:
         generateValue: true
       - key: PORT
         value: "10000"
+      - key: SMTP_SENDER_EMAIL
+        sync: false
+      - key: SMTP_APP_PASSWORD
+        sync: false
       - key: ASPNETCORE_ENVIRONMENT
         value: Production

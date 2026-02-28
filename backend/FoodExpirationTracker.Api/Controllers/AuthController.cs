@@ -16,9 +16,23 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<MessageResponse>> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken)
     {
         var response = await _authService.RegisterAsync(request, cancellationToken);
+        return Ok(response);
+    }
+
+    [HttpPost("verify")]
+    public async Task<ActionResult<AuthResponse>> Verify([FromBody] VerifyRequest request, CancellationToken cancellationToken)
+    {
+        var response = await _authService.VerifyAsync(request, cancellationToken);
+        return Ok(response);
+    }
+
+    [HttpPost("resend")]
+    public async Task<ActionResult<MessageResponse>> Resend([FromBody] ResendRequest request, CancellationToken cancellationToken)
+    {
+        var response = await _authService.ResendAsync(request, cancellationToken);
         return Ok(response);
     }
 

@@ -1,14 +1,33 @@
 import * as React from "react";
 import { BottomNav } from "./BottomNav";
 import { TopNav } from "./TopNav";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
+import { App } from "@capacitor/app";
 
-const NO_NAV_ROUTES = ["/splash", "/onboarding", "/login", "/register"];
+const NO_NAV_ROUTES = ["/splash", "/onboarding", "/login", "/register", "/verify-email"];
 
 export function MobileLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const pathname = location.pathname;
   const showNav = !NO_NAV_ROUTES.includes(pathname);
+
+  React.useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const listener = App.addListener("backButton", () => {
+      if (location.pathname === "/" || location.pathname === "") {
+        App.exitApp();
+      } else {
+        navigate("/");
+      }
+    });
+
+    return () => {
+      listener.then((l) => l.remove());
+    };
+  }, [location.pathname, navigate]);
 
   return (
     <div className="min-h-screen bg-muted/20 flex justify-center items-center overflow-x-hidden p-0 md:p-8">

@@ -49,6 +49,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { scheduleAllNotifications } from "@/lib/notificationScheduler";
 
 const PREF_KEY = "foodtrack_preferences";
 
@@ -60,6 +61,7 @@ type Preferences = {
   darkMode: boolean;
   language: "English" | "Hindi" | "Telugu";
   reminderTiming: "7 Days" | "3 Days" | "1 Day" | "On Expiry";
+  notificationTime: string;
 };
 
 const defaultPrefs: Preferences = {
@@ -70,6 +72,7 @@ const defaultPrefs: Preferences = {
   darkMode: false,
   language: "English",
   reminderTiming: "1 Day",
+  notificationTime: "09:00",
 };
 
 const ProfileSection = ({ title, children, description }: { title: string; children: React.ReactNode; description?: string }) => (
@@ -221,15 +224,30 @@ const TestNotificationButton = ({ token }: { token: string }) => {
           return;
         }
 
+        // Create notification channel (required for Android 8+)
+        try {
+          await LocalNotifications.createChannel({
+            id: "foodtracker_alerts",
+            name: "Food Expiry Alerts",
+            description: "Notifications about expiring food items",
+            importance: 5,
+            sound: "default",
+            vibration: true,
+          });
+        } catch {
+          // Channel may already exist
+        }
+
         // Schedule local notification in 5 seconds
         await LocalNotifications.schedule({
           notifications: [
             {
-              id: Date.now(),
+              id: Math.floor(Math.random() * 1_000_000) + 1,
               title: "Food Expiry Reminder",
               body: "Test: Your Milk expires tomorrow! Check your pantry.",
               schedule: { at: new Date(Date.now() + 5000) },
               sound: "default",
+              channelId: "foodtracker_alerts",
               smallIcon: "ic_launcher",
               largeIcon: "ic_launcher",
             },
@@ -330,6 +348,21 @@ export default function Profile() {
     document.documentElement.classList.toggle("dark", prefs.darkMode);
   }, [prefs]);
 
+  // Reschedule notifications when alert-related prefs change
+  useEffect(() => {
+    if (!token || !prefs.enableAlerts) return;
+    api.products(token).then((res) => {
+      scheduleAllNotifications(res.items, {
+        enableAlerts: prefs.enableAlerts,
+        silentHours: prefs.silentHours,
+        silentStart: prefs.silentStart,
+        silentEnd: prefs.silentEnd,
+        reminderTiming: prefs.reminderTiming,
+        notificationTime: prefs.notificationTime,
+      });
+    }).catch(() => {});
+  }, [token, prefs.enableAlerts, prefs.reminderTiming, prefs.notificationTime, prefs.silentHours, prefs.silentStart, prefs.silentEnd]);
+
   return (
     <div className="flex flex-col gap-2 pb-24 animate-in slide-in-from-right duration-300">
       <div className="px-6 pt-8 pb-6 flex flex-col items-center gap-4">
@@ -348,7 +381,6 @@ export default function Profile() {
         <div className="text-center">
           <h2 className="text-xl font-bold text-foreground leading-tight">{profileQuery.data?.firstName} {profileQuery.data?.lastName}</h2>
           <p className="text-sm text-muted-foreground">{profileQuery.data?.email}</p>
-          <p className="text-xs text-muted-foreground">Age: {profileQuery.data?.age ?? "-"}</p>
         </div>
       </div>
 
@@ -367,6 +399,23 @@ export default function Profile() {
                 {d}
               </Badge>
             ))}
+          </div>
+        </div>
+        <div className="p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-muted/50 text-muted-foreground">
+              <Clock className="h-5 w-5" />
+            </div>
+            <div className="flex flex-col flex-1">
+              <span className="text-sm font-semibold text-foreground">Notification Time</span>
+              <span className="text-[10px] text-muted-foreground">When to receive daily expiry alerts</span>
+            </div>
+            <input
+              type="time"
+              value={prefs.notificationTime}
+              onChange={(e) => setPrefs((p) => ({ ...p, notificationTime: e.target.value }))}
+              className="h-10 rounded-xl border border-input bg-background px-3 text-sm font-medium w-[120px]"
+            />
           </div>
         </div>
         <SettingItem icon={Volume2} label="Notification Sound" value="Default" onClick={() => toast("Notification sound settings saved.")} />

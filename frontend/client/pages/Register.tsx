@@ -7,7 +7,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 export default function Register() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [age, setAge] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -33,9 +32,8 @@ export default function Register() {
         confirmPassword,
         firstName,
         lastName,
-        age: age ? Number(age) : null,
       });
-      navigate("/login");
+      navigate(`/verify-email?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -50,7 +48,6 @@ export default function Register() {
         <p className="text-sm text-muted-foreground -mt-2">Sign up to start tracking your food</p>
         <Input placeholder="First name" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className="rounded-xl h-11" />
         <Input placeholder="Last name" value={lastName} onChange={(e) => setLastName(e.target.value)} required className="rounded-xl h-11" />
-        <Input placeholder="Age (optional)" type="number" min={1} value={age} onChange={(e) => setAge(e.target.value)} className="rounded-xl h-11" />
         <Input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="rounded-xl h-11" />
         <Input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="rounded-xl h-11" />
         <Input placeholder="Confirm password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="rounded-xl h-11" />
