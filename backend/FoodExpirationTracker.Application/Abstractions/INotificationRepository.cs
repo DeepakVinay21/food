@@ -9,4 +9,6 @@ public interface INotificationRepository
     Task<int> CountUsedBatchesInMonthAsync(Guid userId, int year, int month, CancellationToken cancellationToken = default);
     Task<int> CountExpiredBatchesInMonthAsync(Guid userId, int year, int month, CancellationToken cancellationToken = default);
     Task<List<NotificationLog>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task DeleteByBatchAndTypeAsync(Guid batchId, string notificationType, CancellationToken cancellationToken = default);
+    Task DeleteAllByUserAsync(Guid userId, CancellationToken cancellationToken = default);
 }

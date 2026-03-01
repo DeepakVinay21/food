@@ -110,6 +110,23 @@ public class ProductService
         return new PagedResult<ProductDto>(safePage, safePageSize, paged.TotalCount, items);
     }
 
+    public async Task DeleteProductAsync(Guid userId, Guid productId, CancellationToken cancellationToken = default)
+    {
+        var product = await _productRepository.GetByIdAsync(productId, cancellationToken)
+            ?? throw new KeyNotFoundException("Product not found.");
+
+        if (product.UserId != userId)
+        {
+            throw new UnauthorizedAccessException("This product does not belong to the current user.");
+        }
+
+        var batches = await _productRepository.GetProductBatchesAsync(productId, cancellationToken);
+        foreach (var batch in batches.Where(b => !b.IsDeleted))
+        {
+            await _productRepository.DeleteBatchAsync(batch, cancellationToken);
+        }
+    }
+
     public async Task<ProductBatch> GetOwnedBatchAsync(Guid userId, Guid batchId, CancellationToken cancellationToken = default)
     {
         var isOwned = await _productRepository.IsBatchOwnedByUserAsync(batchId, userId, cancellationToken);

@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import {
   Bell,
-  BellRing,
   ChevronRight,
   Globe,
   Lock,
@@ -18,9 +17,9 @@ import {
   Clock,
   Volume2,
   Sun,
+  Play,
+  Check,
 } from "lucide-react";
-import { Capacitor } from "@capacitor/core";
-import { LocalNotifications } from "@capacitor/local-notifications";
 import {
   Dialog,
   DialogContent,
@@ -46,10 +45,20 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { scheduleAllNotifications } from "@/lib/notificationScheduler";
+import { fireInstantNotification, scheduleAllNotifications } from "@/lib/notificationScheduler";
+import {
+  playNotificationSound,
+  NOTIFICATION_SOUNDS,
+  getSelectedSound,
+  setSelectedSound,
+  previewSound,
+  type NotificationSoundId,
+} from "@/lib/notificationSounds";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
+import type { Language } from "@/lib/i18n/translations";
 
 const PREF_KEY = "foodtrack_preferences";
 
@@ -59,10 +68,13 @@ type Preferences = {
   silentStart: string;
   silentEnd: string;
   darkMode: boolean;
-  language: "English" | "Hindi" | "Telugu";
+  language: Language;
   reminderTiming: "7 Days" | "3 Days" | "1 Day" | "On Expiry";
-  notificationTime: string;
+  notificationSound: NotificationSoundId;
 };
+
+const REMINDER_TO_DAYS: Record<string, number> = { "7 Days": 7, "3 Days": 3, "1 Day": 1, "On Expiry": 0 };
+const DAYS_TO_REMINDER: Record<number, Preferences["reminderTiming"]> = { 7: "7 Days", 3: "3 Days", 1: "1 Day", 0: "On Expiry" };
 
 const defaultPrefs: Preferences = {
   enableAlerts: true,
@@ -72,7 +84,7 @@ const defaultPrefs: Preferences = {
   darkMode: false,
   language: "English",
   reminderTiming: "1 Day",
-  notificationTime: "09:00",
+  notificationSound: getSelectedSound(),
 };
 
 const ProfileSection = ({ title, children, description }: { title: string; children: React.ReactNode; description?: string }) => (
@@ -85,7 +97,7 @@ const ProfileSection = ({ title, children, description }: { title: string; child
   </div>
 );
 
-const SettingItem = ({ icon: Icon, label, value, onClick, destructive, toggle, onToggle }: { icon: any; label: string; value?: string; onClick?: () => void; destructive?: boolean; toggle?: boolean; onToggle?: (v: boolean) => void }) => (
+const SettingItem = ({ icon: Icon, label, value, onClick, destructive, toggle, onToggle, dropdown }: { icon: any; label: string; value?: string; onClick?: () => void; destructive?: boolean; toggle?: boolean; onToggle?: (v: boolean) => void; dropdown?: React.ReactNode }) => (
   <div className={cn("p-4 flex items-center justify-between transition-colors active:bg-muted/50", onClick && "cursor-pointer")} onClick={onClick}>
     <div className="flex items-center gap-3">
       <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", destructive ? "bg-red-50 dark:bg-red-500/10 text-red-500" : "bg-muted/50 text-muted-foreground")}>
@@ -94,8 +106,12 @@ const SettingItem = ({ icon: Icon, label, value, onClick, destructive, toggle, o
       <span className={cn("text-sm font-semibold text-foreground", destructive && "text-red-500")}>{label}</span>
     </div>
     <div className="flex items-center gap-2">
-      {value && <span className="text-xs font-medium text-muted-foreground">{value}</span>}
-      {toggle !== undefined ? <Switch checked={toggle} onCheckedChange={onToggle} /> : onClick && <ChevronRight className="h-4 w-4 text-muted-foreground/50" />}
+      {dropdown || (
+        <>
+          {value && <span className="text-xs font-medium text-muted-foreground">{value}</span>}
+          {toggle !== undefined ? <Switch checked={toggle} onCheckedChange={onToggle} /> : onClick && <ChevronRight className="h-4 w-4 text-muted-foreground/50" />}
+        </>
+      )}
     </div>
   </div>
 );
@@ -110,7 +126,91 @@ function loadPreferences(): Preferences {
   }
 }
 
-const ChangePasswordDialog = ({ token }: { token: string }) => {
+const NotificationSoundDialog = ({
+  selectedSound,
+  onSelect,
+  t,
+}: {
+  selectedSound: NotificationSoundId;
+  onSelect: (id: NotificationSoundId) => void;
+  t: (key: any, vars?: any) => string;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [current, setCurrent] = useState(selectedSound);
+
+  useEffect(() => {
+    if (isOpen) setCurrent(selectedSound);
+  }, [isOpen, selectedSound]);
+
+  const soundLabel = NOTIFICATION_SOUNDS.find((s) => s.id === selectedSound)?.name ?? "Fresh Ping";
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <div className="w-full">
+          <SettingItem icon={Volume2} label={t("profile.notificationSound")} value={soundLabel} />
+        </div>
+      </DialogTrigger>
+      <DialogContent className="max-w-[400px] rounded-3xl p-6">
+        <DialogHeader>
+          <DialogTitle className="text-xl">{t("profile.notificationSoundDialogTitle")}</DialogTitle>
+          <DialogDescription>{t("profile.notificationSoundDialogDesc")}</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-2 my-3">
+          {NOTIFICATION_SOUNDS.map((sound) => (
+            <div
+              key={sound.id}
+              onClick={() => {
+                setCurrent(sound.id);
+                previewSound(sound.id);
+              }}
+              className={cn(
+                "flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all active:scale-[0.98]",
+                current === sound.id
+                  ? "border-primary bg-primary/5"
+                  : "border-border bg-muted/20 hover:bg-muted/40",
+              )}
+            >
+              <button
+                className={cn(
+                  "w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors",
+                  current === sound.id
+                    ? "bg-primary text-white"
+                    : "bg-muted/50 text-muted-foreground",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  previewSound(sound.id);
+                }}
+              >
+                <Play className="h-4 w-4" />
+              </button>
+              <div className="flex-1 min-w-0">
+                <p className={cn("text-sm font-semibold", current === sound.id ? "text-primary" : "text-foreground")}>{sound.name}</p>
+                <p className="text-[11px] text-muted-foreground">{sound.description}</p>
+              </div>
+              {current === sound.id && (
+                <Check className="h-5 w-5 text-primary shrink-0" />
+              )}
+            </div>
+          ))}
+        </div>
+        <Button
+          className="w-full rounded-xl h-11"
+          onClick={() => {
+            onSelect(current);
+            setIsOpen(false);
+            toast.success(t("profile.notificationSoundUpdated"));
+          }}
+        >
+          {t("profile.saveSound")}
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const ChangePasswordDialog = ({ token, t }: { token: string; t: (key: any, vars?: any) => string }) => {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -130,25 +230,25 @@ const ChangePasswordDialog = ({ token }: { token: string }) => {
   const handleSubmit = async () => {
     setError("");
     if (!currentPassword || !newPassword || !confirmPassword) {
-      setError("All fields are required.");
+      setError(t("profile.allFieldsRequired"));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("New password and confirm password must match.");
+      setError(t("profile.passwordsMustMatch"));
       return;
     }
     if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters.");
+      setError(t("profile.passwordMinLength"));
       return;
     }
 
     setLoading(true);
     try {
       await api.changePassword(token, currentPassword, newPassword);
-      toast.success("Password changed successfully!");
+      toast.success(t("profile.passwordChanged"));
       setIsOpen(false);
     } catch (err: any) {
-      setError(err.message || "Failed to change password.");
+      setError(err.message || t("profile.failedToChangePassword"));
     } finally {
       setLoading(false);
     }
@@ -158,20 +258,20 @@ const ChangePasswordDialog = ({ token }: { token: string }) => {
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         <div className="w-full">
-          <SettingItem icon={Lock} label="Change password" />
+          <SettingItem icon={Lock} label={t("profile.changePassword")} />
         </div>
       </DialogTrigger>
       <DialogContent className="max-w-[400px] rounded-3xl p-6">
         <DialogHeader>
-          <DialogTitle className="text-xl">Change Password</DialogTitle>
+          <DialogTitle className="text-xl">{t("profile.changePasswordTitle")}</DialogTitle>
           <DialogDescription>
-            Update your account password securely.
+            {t("profile.changePasswordDesc")}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 my-2">
           {error && <div className="p-3 bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-400 font-medium text-xs rounded-xl border border-red-200 dark:border-red-500/20">{error}</div>}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Current Password</label>
+            <label className="text-sm font-medium">{t("profile.currentPassword")}</label>
             <input
               type="password"
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
@@ -180,7 +280,7 @@ const ChangePasswordDialog = ({ token }: { token: string }) => {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">New Password</label>
+            <label className="text-sm font-medium">{t("profile.newPassword")}</label>
             <input
               type="password"
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
@@ -189,7 +289,7 @@ const ChangePasswordDialog = ({ token }: { token: string }) => {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Confirm New Password</label>
+            <label className="text-sm font-medium">{t("profile.confirmNewPassword")}</label>
             <input
               type="password"
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
@@ -199,143 +299,19 @@ const ChangePasswordDialog = ({ token }: { token: string }) => {
           </div>
         </div>
         <Button className="w-full rounded-xl h-11" onClick={handleSubmit} disabled={loading}>
-          {loading ? "Updating..." : "Update Password"}
+          {loading ? t("profile.updating") : t("profile.updatePassword")}
         </Button>
       </DialogContent>
     </Dialog>
   );
 };
 
-const TestNotificationButton = ({ token }: { token: string }) => {
-  const [testing, setTesting] = useState(false);
-  const [countdown, setCountdown] = useState(0);
-
-  const sendTestNotification = async () => {
-    setTesting(true);
-    setCountdown(5);
-
-    try {
-      if (Capacitor.isNativePlatform()) {
-        // Request permission
-        const perm = await LocalNotifications.requestPermissions();
-        if (perm.display !== "granted") {
-          toast.error("Notification permission denied. Enable it in app settings.");
-          setTesting(false);
-          return;
-        }
-
-        // Create notification channel (required for Android 8+)
-        try {
-          await LocalNotifications.createChannel({
-            id: "foodtracker_alerts",
-            name: "Food Expiry Alerts",
-            description: "Notifications about expiring food items",
-            importance: 5,
-            sound: "default",
-            vibration: true,
-          });
-        } catch {
-          // Channel may already exist
-        }
-
-        // Schedule local notification in 5 seconds
-        await LocalNotifications.schedule({
-          notifications: [
-            {
-              id: Math.floor(Math.random() * 1_000_000) + 1,
-              title: "Food Expiry Reminder",
-              body: "Test: Your Milk expires tomorrow! Check your pantry.",
-              schedule: { at: new Date(Date.now() + 5000) },
-              sound: "default",
-              channelId: "foodtracker_alerts",
-              smallIcon: "ic_launcher",
-              largeIcon: "ic_launcher",
-            },
-          ],
-        });
-
-        // Countdown timer
-        let c = 5;
-        const interval = setInterval(() => {
-          c--;
-          setCountdown(c);
-          if (c <= 0) {
-            clearInterval(interval);
-            setTesting(false);
-            toast.success("Notification sent! Check your notification tray.");
-          }
-        }, 1000);
-      } else {
-        // Web fallback: use browser Notification API
-        if ("Notification" in window) {
-          const perm = await Notification.requestPermission();
-          if (perm === "granted") {
-            setTimeout(() => {
-              new Notification("Food Expiry Reminder", {
-                body: "Test: Your Milk expires tomorrow! Check your pantry.",
-                icon: "/favicon.ico",
-              });
-              setTesting(false);
-              toast.success("Notification sent!");
-            }, 5000);
-
-            let c = 5;
-            const interval = setInterval(() => {
-              c--;
-              setCountdown(c);
-              if (c <= 0) clearInterval(interval);
-            }, 1000);
-          } else {
-            toast.error("Notification permission denied.");
-            setTesting(false);
-          }
-        } else {
-          toast.error("Notifications not supported.");
-          setTesting(false);
-        }
-      }
-
-      // Also trigger backend daily job to test server-side notifications
-      try {
-        await api.runNotifications(token);
-      } catch {
-        // Backend notification is optional for this test
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to send test notification.");
-      setTesting(false);
-    }
-  };
-
-  return (
-    <div
-      className="p-4 flex items-center justify-between transition-colors active:bg-muted/50 cursor-pointer"
-      onClick={!testing ? sendTestNotification : undefined}
-    >
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-green-50 dark:bg-green-500/10 text-green-600">
-          <BellRing className="h-5 w-5" />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold text-foreground">Test Notification</span>
-          <span className="text-[10px] text-muted-foreground">Sends a test alert in 5 seconds</span>
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        {testing ? (
-          <span className="text-xs font-bold text-primary animate-pulse">{countdown}s</span>
-        ) : (
-          <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
-        )}
-      </div>
-    </div>
-  );
-};
-
 export default function Profile() {
   const { token, logout } = useAuth();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [prefs, setPrefs] = useState<Preferences>(loadPreferences);
+  const { t, language, setLanguage } = useTranslation();
 
   const profileQuery = useQuery({
     queryKey: ["profile"],
@@ -343,25 +319,34 @@ export default function Profile() {
     enabled: !!token,
   });
 
+  const updatePrefs = (updater: (p: Preferences) => Preferences) => {
+    setPrefs((p) => updater(p));
+  };
+
   useEffect(() => {
     localStorage.setItem(PREF_KEY, JSON.stringify(prefs));
     document.documentElement.classList.toggle("dark", prefs.darkMode);
-  }, [prefs]);
 
-  // Reschedule notifications when alert-related prefs change
-  useEffect(() => {
-    if (!token || !prefs.enableAlerts) return;
-    api.products(token).then((res) => {
-      scheduleAllNotifications(res.items, {
-        enableAlerts: prefs.enableAlerts,
-        silentHours: prefs.silentHours,
-        silentStart: prefs.silentStart,
-        silentEnd: prefs.silentEnd,
-        reminderTiming: prefs.reminderTiming,
-        notificationTime: prefs.notificationTime,
-      });
-    }).catch(() => {});
-  }, [token, prefs.enableAlerts, prefs.reminderTiming, prefs.notificationTime, prefs.silentHours, prefs.silentStart, prefs.silentEnd]);
+    // Reschedule mobile notifications when alert prefs change
+    if (token) {
+      api.products(token).then((res) => {
+        scheduleAllNotifications(res.items, {
+          enableAlerts: prefs.enableAlerts,
+          silentHours: prefs.silentHours,
+          silentStart: prefs.silentStart,
+          silentEnd: prefs.silentEnd,
+          reminderTiming: prefs.reminderTiming,
+          notificationTime: "09:00",
+        });
+      }).catch(() => {});
+    }
+  }, [prefs, token]);
+
+  const languageLabels: Record<Language, string> = {
+    English: t("profile.languageEnglish"),
+    Hindi: t("profile.languageHindi"),
+    Telugu: t("profile.languageTelugu"),
+  };
 
   return (
     <div className="flex flex-col gap-2 pb-24 animate-in slide-in-from-right duration-300">
@@ -384,107 +369,104 @@ export default function Profile() {
         </div>
       </div>
 
-      <ProfileSection title="Notifications" description="Control how and when you receive alerts.">
-        <SettingItem icon={Bell} label="Enable Expiry Alerts" toggle={prefs.enableAlerts} onToggle={(v) => setPrefs((p) => ({ ...p, enableAlerts: v }))} />
-        <div className="p-4 flex flex-col gap-3">
-          <span className="text-xs font-bold text-muted-foreground/70 px-1 uppercase tracking-wider">Reminder Timing</span>
-          <div className="flex flex-wrap gap-2">
-            {(["7 Days", "3 Days", "1 Day", "On Expiry"] as const).map((d) => (
-              <Badge
-                key={d}
-                variant="outline"
-                onClick={() => setPrefs((p) => ({ ...p, reminderTiming: d }))}
-                className={cn("rounded-xl px-3 h-8 border-border bg-muted/20 text-muted-foreground transition-all cursor-pointer active:scale-95", prefs.reminderTiming === d ? "bg-primary/10 border-primary text-primary" : "")}
-              >
-                {d}
-              </Badge>
-            ))}
-          </div>
-        </div>
-        <div className="p-4 flex flex-col gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-muted/50 text-muted-foreground">
-              <Clock className="h-5 w-5" />
-            </div>
-            <div className="flex flex-col flex-1">
-              <span className="text-sm font-semibold text-foreground">Notification Time</span>
-              <span className="text-[10px] text-muted-foreground">When to receive daily expiry alerts</span>
-            </div>
-            <input
-              type="time"
-              value={prefs.notificationTime}
-              onChange={(e) => setPrefs((p) => ({ ...p, notificationTime: e.target.value }))}
-              className="h-10 rounded-xl border border-input bg-background px-3 text-sm font-medium w-[120px]"
-            />
-          </div>
-        </div>
-        <SettingItem icon={Volume2} label="Notification Sound" value="Default" onClick={() => toast("Notification sound settings saved.")} />
-        <SettingItem icon={Moon} label="Silent Hours" toggle={prefs.silentHours} onToggle={(v) => setPrefs((p) => ({ ...p, silentHours: v }))} />
+      <ProfileSection title={t("profile.notifications")} description={t("profile.notificationsDescription")}>
+        <SettingItem icon={Bell} label={t("profile.enableExpiryAlerts")} toggle={prefs.enableAlerts} onToggle={(v) => updatePrefs((p) => ({ ...p, enableAlerts: v }))} />
+        <SettingItem
+          icon={Bell}
+          label="Test Notification"
+          value="Send now"
+          onClick={async () => {
+            try {
+              if (!token) return;
+              // Request browser notification permission
+              if ("Notification" in window && Notification.permission === "default") {
+                await Notification.requestPermission();
+              }
+              // Send test notifications for all expiring items
+              await api.testNotification(token);
+              // Trigger immediate refetch so TopNav picks up new notifications + shows toasts
+              qc.invalidateQueries({ queryKey: ["notifications"] });
+              toast.success("Notifications sent for all expiring items!");
+            } catch (err: any) {
+              toast.error(err.message || "Failed to send test notification.");
+            }
+          }}
+        />
+        <NotificationSoundDialog
+          selectedSound={prefs.notificationSound}
+          onSelect={(id) => {
+            setSelectedSound(id);
+            setPrefs((p) => ({ ...p, notificationSound: id }));
+          }}
+          t={t}
+        />
+        <SettingItem icon={Moon} label={t("profile.silentHours")} toggle={prefs.silentHours} onToggle={(v) => updatePrefs((p) => ({ ...p, silentHours: v }))} />
         {prefs.silentHours && (
           <div className="p-4 flex flex-col gap-3 animate-in slide-in-from-top-2 duration-200">
-            <span className="text-xs font-bold text-muted-foreground/70 px-1 uppercase tracking-wider">Quiet Period</span>
+            <span className="text-xs font-bold text-muted-foreground/70 px-1 uppercase tracking-wider">{t("profile.quietPeriod")}</span>
             <div className="flex items-center gap-3">
               <div className="flex-1 flex flex-col gap-1">
-                <label className="text-[10px] text-muted-foreground font-medium">From</label>
+                <label className="text-[10px] text-muted-foreground font-medium">{t("profile.silentFrom")}</label>
                 <input
                   type="time"
                   value={prefs.silentStart}
-                  onChange={(e) => setPrefs((p) => ({ ...p, silentStart: e.target.value }))}
+                  onChange={(e) => updatePrefs((p) => ({ ...p, silentStart: e.target.value }))}
                   className="h-10 rounded-xl border border-input bg-background px-3 text-sm font-medium"
                 />
               </div>
               <span className="text-muted-foreground font-bold mt-4">—</span>
               <div className="flex-1 flex flex-col gap-1">
-                <label className="text-[10px] text-muted-foreground font-medium">To</label>
+                <label className="text-[10px] text-muted-foreground font-medium">{t("profile.silentTo")}</label>
                 <input
                   type="time"
                   value={prefs.silentEnd}
-                  onChange={(e) => setPrefs((p) => ({ ...p, silentEnd: e.target.value }))}
+                  onChange={(e) => updatePrefs((p) => ({ ...p, silentEnd: e.target.value }))}
                   className="h-10 rounded-xl border border-input bg-background px-3 text-sm font-medium"
                 />
               </div>
             </div>
-            <p className="text-[10px] text-muted-foreground">No alerts will be sent during this period.</p>
+            <p className="text-[10px] text-muted-foreground">{t("profile.silentHoursNote")}</p>
           </div>
         )}
-        <TestNotificationButton token={token!} />
       </ProfileSection>
 
-      <ProfileSection title="App Preferences">
-        <SettingItem icon={prefs.darkMode ? Moon : Sun} label="Dark Mode" toggle={prefs.darkMode} onToggle={(v) => setPrefs((p) => ({ ...p, darkMode: v }))} />
-        <div className="p-4 flex flex-col gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-muted/50 text-muted-foreground">
-              <Globe className="h-5 w-5" />
-            </div>
-            <span className="text-sm font-semibold text-foreground">Language</span>
-          </div>
-          <div className="flex flex-wrap gap-2 mt-1">
-            {(["English", "Hindi", "Telugu"] as const).map((lang) => (
-              <Badge
-                key={lang}
-                variant="outline"
-                onClick={() => { setPrefs((p) => ({ ...p, language: lang })); toast.success(`Language set to ${lang}`); }}
-                className={cn("rounded-xl px-4 h-9 border-border bg-muted/20 text-muted-foreground transition-all cursor-pointer active:scale-95 text-sm font-medium", prefs.language === lang ? "bg-primary/10 border-primary text-primary" : "")}
-              >
-                {lang}
-              </Badge>
-            ))}
-          </div>
-        </div>
+      <ProfileSection title={t("profile.appPreferences")}>
+        <SettingItem icon={prefs.darkMode ? Moon : Sun} label={t("profile.darkMode")} toggle={prefs.darkMode} onToggle={(v) => setPrefs((p) => ({ ...p, darkMode: v }))} />
+        <SettingItem
+          icon={Globe}
+          label={t("profile.language")}
+          value={languageLabels[language]}
+          dropdown={
+            <select
+              value={language}
+              onChange={(e) => {
+                const lang = e.target.value as Language;
+                setPrefs((p) => ({ ...p, language: lang }));
+                setLanguage(lang);
+                toast.success(t("profile.languageSetTo", { language: languageLabels[lang] }));
+              }}
+              className="h-10 rounded-xl border border-input bg-background px-3 text-sm font-medium text-foreground appearance-none cursor-pointer pr-8 min-w-[130px]"
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center" }}
+            >
+              {(["English", "Hindi", "Telugu"] as const).map((lang) => (
+                <option key={lang} value={lang}>{languageLabels[lang]}</option>
+              ))}
+            </select>
+          }
+        />
       </ProfileSection>
 
-      <ProfileSection title="Account & Security">
-        <ChangePasswordDialog token={token!} />
-        <SettingItem icon={Mail} label="Email Verification" value="Verified" onClick={() => toast.success("Your email is already verified.")} />
+      <ProfileSection title={t("profile.accountAndSecurity")}>
+        <ChangePasswordDialog token={token!} t={t} />
+        <SettingItem icon={Mail} label={t("profile.emailVerification")} value={t("profile.emailVerified")} onClick={() => toast.success(t("profile.emailAlreadyVerified"))} />
 
         <div className="py-2" />
         <SettingItem
           icon={LogOut}
-          label="Logout"
+          label={t("profile.logout")}
           destructive
           onClick={async () => {
-            toast("Logging out...");
+            toast(t("profile.loggingOut"));
             await logout();
             navigate("/login");
           }}
@@ -493,63 +475,62 @@ export default function Profile() {
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <div className="w-full">
-              <SettingItem icon={Trash2} label="Delete Account" destructive />
+              <SettingItem icon={Trash2} label={t("profile.deleteAccount")} destructive />
             </div>
           </AlertDialogTrigger>
           <AlertDialogContent className="rounded-2xl max-w-[400px]">
             <AlertDialogHeader>
-              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogTitle>{t("profile.deleteAccountTitle")}</AlertDialogTitle>
               <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete your
-                account, remove your credentials, and wipe all your data from our servers.
+                {t("profile.deleteAccountDesc")}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="flex-col space-y-2 sm:flex-row sm:justify-end sm:space-x-2 sm:space-y-0">
-              <AlertDialogCancel className="rounded-xl mt-0">Cancel</AlertDialogCancel>
+              <AlertDialogCancel className="rounded-xl mt-0">{t("profile.cancel")}</AlertDialogCancel>
               <AlertDialogAction
                 className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={async () => {
                   try {
                     await api.deleteAccount(token!);
-                    toast.success("Account deleted successfully.");
+                    toast.success(t("profile.accountDeleted"));
                     await logout();
                     navigate("/register");
                   } catch (err: any) {
-                    toast.error(err.message || "Failed to delete account.");
+                    toast.error(err.message || t("profile.failedToDeleteAccount"));
                   }
                 }}
               >
-                Delete Account
+                {t("profile.deleteAccountConfirm")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
       </ProfileSection>
 
-      <ProfileSection title="Help & Legal">
+      <ProfileSection title={t("profile.helpAndLegal")}>
         <Dialog>
           <DialogTrigger asChild>
             <div className="w-full">
-              <SettingItem icon={HelpCircle} label="FAQ" />
+              <SettingItem icon={HelpCircle} label={t("profile.faq")} />
             </div>
           </DialogTrigger>
           <DialogContent className="max-w-[400px] rounded-3xl p-6">
             <DialogHeader>
-              <DialogTitle className="text-xl">Frequently Asked Questions</DialogTitle>
-              <DialogDescription>Common questions about Food Expiration Tracker.</DialogDescription>
+              <DialogTitle className="text-xl">{t("profile.faqTitle")}</DialogTitle>
+              <DialogDescription>{t("profile.faqDesc")}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 my-2 max-h-[60vh] overflow-y-auto pr-2">
               <div className="space-y-2">
-                <h4 className="font-semibold text-sm">How do I add items?</h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">You can add items via the Scan page to automatically detect items using your camera, or manually from the pantry.</p>
+                <h4 className="font-semibold text-sm">{t("profile.faqHowToAdd")}</h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">{t("profile.faqHowToAddAnswer")}</p>
               </div>
               <div className="space-y-2">
-                <h4 className="font-semibold text-sm">How do notifications work?</h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">The app will send you notifications based on your chosen Reminder Timing preferences in the Profile section.</p>
+                <h4 className="font-semibold text-sm">{t("profile.faqNotifications")}</h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">{t("profile.faqNotificationsAnswer")}</p>
               </div>
               <div className="space-y-2">
-                <h4 className="font-semibold text-sm">Is my data backed up?</h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">Your data is stored securely on our servers and synced across your devices.</p>
+                <h4 className="font-semibold text-sm">{t("profile.faqDataBackup")}</h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">{t("profile.faqDataBackupAnswer")}</p>
               </div>
             </div>
           </DialogContent>
@@ -558,23 +539,23 @@ export default function Profile() {
         <Dialog>
           <DialogTrigger asChild>
             <div className="w-full">
-              <SettingItem icon={MessageSquare} label="Contact Support" />
+              <SettingItem icon={MessageSquare} label={t("profile.contactSupport")} />
             </div>
           </DialogTrigger>
           <DialogContent className="max-w-[400px] rounded-3xl p-6">
             <DialogHeader>
-              <DialogTitle className="text-xl">Contact Support</DialogTitle>
-              <DialogDescription>We're here to help you out!</DialogDescription>
+              <DialogTitle className="text-xl">{t("profile.contactSupportTitle")}</DialogTitle>
+              <DialogDescription>{t("profile.contactSupportDesc")}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 my-4">
-              <p className="text-sm text-muted-foreground">You can reach our dedicated support team via email at:</p>
+              <p className="text-sm text-muted-foreground">{t("profile.contactSupportBody")}</p>
               <div className="p-4 bg-muted/50 rounded-2xl flex items-center justify-center border border-border">
-                <span className="font-semibold text-primary">support@foodtrack.example.com</span>
+                <span className="font-semibold text-primary">{t("profile.contactSupportEmail")}</span>
               </div>
-              <p className="text-sm text-muted-foreground text-center">Typical response time: 24-48 hours.</p>
+              <p className="text-sm text-muted-foreground text-center">{t("profile.contactSupportResponseTime")}</p>
             </div>
-            <Button className="w-full rounded-xl h-11" onClick={() => { navigator.clipboard.writeText("support@foodtrack.example.com"); toast.success("Copied email address to clipboard!"); }}>
-              Copy Email Address
+            <Button className="w-full rounded-xl h-11" onClick={() => { navigator.clipboard.writeText("support@foodtrack.example.com"); toast.success(t("profile.emailCopied")); }}>
+              {t("profile.copyEmailAddress")}
             </Button>
           </DialogContent>
         </Dialog>
@@ -582,25 +563,25 @@ export default function Profile() {
         <Dialog>
           <DialogTrigger asChild>
             <div className="w-full">
-              <SettingItem icon={Bug} label="Report a Bug" />
+              <SettingItem icon={Bug} label={t("profile.reportBug")} />
             </div>
           </DialogTrigger>
           <DialogContent className="max-w-[400px] rounded-3xl p-6">
             <DialogHeader>
-              <DialogTitle className="text-xl">Report a Bug</DialogTitle>
-              <DialogDescription>Found something that isn't working?</DialogDescription>
+              <DialogTitle className="text-xl">{t("profile.reportBugTitle")}</DialogTitle>
+              <DialogDescription>{t("profile.reportBugDesc")}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 my-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Describe the issue</label>
+                <label className="text-sm font-medium">{t("profile.reportBugLabel")}</label>
                 <textarea
                   className="flex min-h-[120px] w-full rounded-2xl border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="What happened? What were you trying to do?"
+                  placeholder={t("profile.reportBugPlaceholder")}
                 />
               </div>
             </div>
-            <Button className="w-full rounded-xl h-11" onClick={() => toast.success("Bug report submitted. Thank you!")}>
-              Submit Report
+            <Button className="w-full rounded-xl h-11" onClick={() => toast.success(t("profile.bugReportSubmitted"))}>
+              {t("profile.submitReport")}
             </Button>
           </DialogContent>
         </Dialog>
@@ -608,20 +589,20 @@ export default function Profile() {
         <Dialog>
           <DialogTrigger asChild>
             <div className="w-full">
-              <SettingItem icon={FileText} label="Privacy Policy" />
+              <SettingItem icon={FileText} label={t("profile.privacyPolicy")} />
             </div>
           </DialogTrigger>
           <DialogContent className="max-w-[400px] rounded-3xl p-6">
             <DialogHeader>
-              <DialogTitle className="text-xl">Privacy Policy</DialogTitle>
-              <DialogDescription>Last updated: February 2026</DialogDescription>
+              <DialogTitle className="text-xl">{t("profile.privacyPolicyTitle")}</DialogTitle>
+              <DialogDescription>{t("profile.privacyPolicyLastUpdated")}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 my-2 max-h-[50vh] overflow-y-auto pr-2 text-sm text-muted-foreground">
-              <p>We respect your privacy and are committed to protecting it through our compliance with this policy.</p>
-              <h4 className="font-semibold text-foreground">Data Collection</h4>
-              <p>The Food Expiration Tracker stores your pantry data securely on our servers. We do not sell your personal data to third parties.</p>
-              <h4 className="font-semibold text-foreground">Camera Access</h4>
-              <p>Camera access is used locally on your device to analyze and extract product names and expiration dates. Images are processed securely.</p>
+              <p>{t("profile.privacyPolicyIntro")}</p>
+              <h4 className="font-semibold text-foreground">{t("profile.privacyDataCollection")}</h4>
+              <p>{t("profile.privacyDataCollectionBody")}</p>
+              <h4 className="font-semibold text-foreground">{t("profile.privacyCameraAccess")}</h4>
+              <p>{t("profile.privacyCameraAccessBody")}</p>
             </div>
           </DialogContent>
         </Dialog>
@@ -629,27 +610,27 @@ export default function Profile() {
         <Dialog>
           <DialogTrigger asChild>
             <div className="w-full">
-              <SettingItem icon={FileText} label="Terms & Conditions" />
+              <SettingItem icon={FileText} label={t("profile.termsAndConditions")} />
             </div>
           </DialogTrigger>
           <DialogContent className="max-w-[400px] rounded-3xl p-6">
             <DialogHeader>
-              <DialogTitle className="text-xl">Terms & Conditions</DialogTitle>
-              <DialogDescription>Please read these terms carefully.</DialogDescription>
+              <DialogTitle className="text-xl">{t("profile.termsTitle")}</DialogTitle>
+              <DialogDescription>{t("profile.termsDesc")}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 my-2 max-h-[50vh] overflow-y-auto pr-2 text-sm text-muted-foreground">
-              <p>By downloading or using the app, these terms will automatically apply to you.</p>
-              <h4 className="font-semibold text-foreground">Usage Restrictions</h4>
-              <p>You may not copy, modify the app, any part of the app, or our trademarks in any way.</p>
-              <h4 className="font-semibold text-foreground">Liability</h4>
-              <p>The recipes and suggestions provided by the app are for informational purposes only. Proceed with caution and common sense.</p>
+              <p>{t("profile.termsIntro")}</p>
+              <h4 className="font-semibold text-foreground">{t("profile.termsUsageRestrictions")}</h4>
+              <p>{t("profile.termsUsageRestrictionsBody")}</p>
+              <h4 className="font-semibold text-foreground">{t("profile.termsLiability")}</h4>
+              <p>{t("profile.termsLiabilityBody")}</p>
             </div>
           </DialogContent>
         </Dialog>
 
         <div className="p-4 flex items-center justify-between text-muted-foreground/50 border-t border-border/50">
-          <span className="text-xs font-bold">App Version</span>
-          <span className="text-xs font-medium">1.0.4 (Build 42)</span>
+          <span className="text-xs font-bold">{t("profile.appVersion")}</span>
+          <span className="text-xs font-medium">{t("profile.appVersionValue")}</span>
         </div>
       </ProfileSection>
     </div>

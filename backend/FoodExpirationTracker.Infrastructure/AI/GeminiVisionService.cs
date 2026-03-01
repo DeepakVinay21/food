@@ -31,7 +31,7 @@ public class GeminiVisionService : IGeminiVisionService
         var apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new InvalidOperationException("Missing GEMINI_API_KEY.");
+            return null;
         }
 
         var parts = new List<object>
@@ -334,7 +334,7 @@ public class GeminiVisionService : IGeminiVisionService
         var apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new InvalidOperationException("Missing GEMINI_API_KEY.");
+            return null;
         }
 
         try
@@ -484,6 +484,39 @@ public class GeminiVisionService : IGeminiVisionService
         {
             return null;
         }
+    }
+
+    public async Task<string?> GenerateTextAsync(string prompt, CancellationToken cancellationToken = default)
+    {
+        var enabled = Environment.GetEnvironmentVariable("GEMINI_ENABLED");
+        if (string.Equals(enabled, "false", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return null;
+
+        var body = new
+        {
+            contents = new[]
+            {
+                new { parts = new object[] { new { text = prompt } } }
+            },
+            generationConfig = new { temperature = 0.7, maxOutputTokens = 4096 }
+        };
+
+        var raw = await TryGenerateContentAsync(body, apiKey, cancellationToken, throwOnFailure: false);
+        if (raw is null) return null;
+
+        using var doc = System.Text.Json.JsonDocument.Parse(raw);
+        var text = doc.RootElement
+            .GetProperty("candidates")[0]
+            .GetProperty("content")
+            .GetProperty("parts")[0]
+            .GetProperty("text")
+            .GetString();
+
+        return text;
     }
 
     private async Task<string?> TryGenerateContentAsync(object body, string apiKey, CancellationToken cancellationToken, bool throwOnFailure)

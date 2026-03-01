@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { api } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 export default function ProfileEdit() {
   const { token } = useAuth();
@@ -12,6 +13,7 @@ export default function ProfileEdit() {
   const [lastName, setLastName] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const { t } = useTranslation();
 
   useEffect(() => {
     api.profile(token!).then((p) => {
@@ -40,20 +42,20 @@ export default function ProfileEdit() {
       });
       navigate("/profile");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save profile");
+      setError(err instanceof Error ? err.message : t("profileEdit.failedToSave"));
     }
   };
 
   return (
     <div className="p-6 flex justify-center">
       <form onSubmit={onSave} className="w-full max-w-md bg-white dark:bg-card border rounded-2xl p-5 grid gap-3">
-        <h2 className="text-xl font-bold">Edit Profile</h2>
-        {photo ? <img src={photo} alt="profile" className="w-24 h-24 rounded-2xl object-cover border" /> : <div className="w-24 h-24 rounded-2xl border grid place-items-center text-xs text-muted-foreground">No photo</div>}
+        <h2 className="text-xl font-bold">{t("profileEdit.title")}</h2>
+        {photo ? <img src={photo} alt="profile" className="w-24 h-24 rounded-2xl object-cover border" /> : <div className="w-24 h-24 rounded-2xl border grid place-items-center text-xs text-muted-foreground">{t("profileEdit.noPhoto")}</div>}
         <Input type="file" accept="image/*" onChange={onPickPhoto} />
-        <Input placeholder="First name" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-        <Input placeholder="Last name" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+        <Input placeholder={t("profileEdit.firstNamePlaceholder")} value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+        <Input placeholder={t("profileEdit.lastNamePlaceholder")} value={lastName} onChange={(e) => setLastName(e.target.value)} required />
         {error && <p className="text-xs text-red-600">{error}</p>}
-        <Button type="submit">Save Profile</Button>
+        <Button type="submit">{t("profileEdit.saveProfile")}</Button>
       </form>
     </div>
   );

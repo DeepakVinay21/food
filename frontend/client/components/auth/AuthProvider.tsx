@@ -8,8 +8,8 @@ type AuthContextValue = {
   email: string | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (payload: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string; age?: number | null }) => Promise<void>;
-  verify: (email: string, code: string) => Promise<void>;
+  sendVerification: (payload: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string }) => Promise<void>;
+  verifyAndRegister: (email: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -29,24 +29,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(EMAIL_KEY, result.email);
   };
 
-  // Register for push notifications + schedule local notifications on mount
+  // Register for push notifications + schedule local notifications + run expiry scan
   React.useEffect(() => {
-    if (token) {
-      initPushNotifications(token).catch(() => {});
-      setupNotificationListeners();
+    if (!token) return;
 
-      // Load prefs and schedule notifications
-      const PREF_KEY = "foodtrack_preferences";
-      let prefs = { enableAlerts: true, silentHours: false, silentStart: "22:00", silentEnd: "07:00", reminderTiming: "1 Day" as const, notificationTime: "09:00" };
-      try {
-        const raw = localStorage.getItem(PREF_KEY);
-        if (raw) prefs = { ...prefs, ...JSON.parse(raw) };
-      } catch {}
+    initPushNotifications(token).catch(() => {});
+    setupNotificationListeners();
 
-      api.products(token).then((res) => {
-        scheduleAllNotifications(res.items, prefs);
-      }).catch(() => {});
-    }
+    // Load prefs and schedule local notifications
+    const PREF_KEY = "foodtrack_preferences";
+    let prefs = { enableAlerts: true, silentHours: false, silentStart: "22:00", silentEnd: "07:00", reminderTiming: "1 Day" as const, notificationTime: "09:00" };
+    try {
+      const raw = localStorage.getItem(PREF_KEY);
+      if (raw) prefs = { ...prefs, ...JSON.parse(raw) };
+    } catch {}
+
+    api.products(token).then((res) => {
+      scheduleAllNotifications(res.items, prefs);
+    }).catch(() => {});
+
+    // Run the backend expiry scan immediately on app open
+    api.runNotifications(token).catch(() => {});
+
+    // Re-run the expiry scan every 30 minutes while the app is open
+    const interval = setInterval(() => {
+      api.runNotifications(token).catch(() => {});
+    }, 30 * 60 * 1000);
+
+    return () => clearInterval(interval);
   }, [token]);
 
   const login = async (userEmail: string, password: string) => {
@@ -55,12 +65,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initPushNotifications(result.accessToken).catch(() => {});
   };
 
-  const register = async (payload: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string; age?: number | null }) => {
-    await api.register(payload);
+  const sendVerification = async (payload: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string }) => {
+    await api.sendVerification(payload);
   };
 
-  const verify = async (userEmail: string, code: string) => {
-    const result = await api.verify(userEmail, code);
+  const verifyAndRegister = async (userEmail: string, code: string) => {
+    const result = await api.verifyAndRegister(userEmail, code);
     save(result);
     initPushNotifications(result.accessToken).catch(() => {});
   };
@@ -86,8 +96,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email,
         isAuthenticated: !!token,
         login,
-        register,
-        verify,
+        sendVerification,
+        verifyAndRegister,
         logout,
       }}
     >

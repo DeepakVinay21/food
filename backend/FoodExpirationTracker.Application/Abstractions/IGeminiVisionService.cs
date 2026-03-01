@@ -25,4 +25,9 @@ public interface IGeminiVisionService
     Task<(string ProductName, string CategoryName)?> ClassifyProductImageAsync(
         byte[] imageBytes,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Text-only generation (no images).
+    /// </summary>
+    Task<string?> GenerateTextAsync(string prompt, CancellationToken cancellationToken = default);
 }

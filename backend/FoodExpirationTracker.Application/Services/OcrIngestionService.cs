@@ -159,7 +159,7 @@ public class OcrIngestionService
         var text = await _geminiVisionService.ExtractTextAsync(images, cancellationToken);
         if (string.IsNullOrWhiteSpace(text))
         {
-            throw new InvalidOperationException("Gemini could not extract text from image. Check GEMINI_API_KEY and retry with a clearer image.");
+            throw new InvalidOperationException("Could not extract text from image. Please retry with a clearer image.");
         }
 
         return text.Trim();

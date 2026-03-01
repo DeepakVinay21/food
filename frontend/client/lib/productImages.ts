@@ -123,7 +123,7 @@ const defaultImage = img("1606787366850-de6330128bfc");
 
 const PRODUCT_IMAGES_KEY = "foodtrack_product_images";
 
-export function imageByName(name: string, categoryName?: string): string {
+export function imageByName(name: string, categoryName?: string): string | null {
   const n = name.toLowerCase().trim();
 
   // Check user-uploaded images first
@@ -143,5 +143,5 @@ export function imageByName(name: string, categoryName?: string): string {
     if (categoryImages[cat]) return categoryImages[cat];
   }
 
-  return defaultImage;
+  return null;
 }

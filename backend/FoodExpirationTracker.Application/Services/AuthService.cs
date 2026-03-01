@@ -193,6 +193,99 @@ public class AuthService
         await _userRepository.UpdateAsync(user, cancellationToken);
     }
 
+    private const string PasswordResetSentinel = "__PASSWORD_RESET__";
+
+    public async Task<MessageResponse> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+
+        var user = await _userRepository.GetByEmailAsync(email, cancellationToken);
+        if (user is null)
+        {
+            // Return success even if user not found to prevent email enumeration
+            return new MessageResponse("If that email is registered, a reset code has been sent.");
+        }
+
+        // Remove any previous pending verification for this email
+        var oldVerification = await _verificationRepository.GetByEmailAsync(email, cancellationToken);
+        if (oldVerification is not null)
+        {
+            await _verificationRepository.DeleteAsync(oldVerification, cancellationToken);
+        }
+
+        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+
+        var verification = new EmailVerification
+        {
+            Email = email,
+            Code = code,
+            PasswordHash = PasswordResetSentinel,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Age = user.Age,
+            ExpiryTime = DateTime.UtcNow.AddMinutes(5),
+            AttemptCount = 0,
+            CreatedAt = DateTime.UtcNow,
+            LastSentAt = DateTime.UtcNow,
+        };
+
+        await _verificationRepository.AddAsync(verification, cancellationToken);
+        await _emailService.SendVerificationEmailAsync(email, code);
+
+        return new MessageResponse("If that email is registered, a reset code has been sent.");
+    }
+
+    public async Task<MessageResponse> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request.NewPassword != request.ConfirmNewPassword)
+        {
+            throw new InvalidOperationException("Passwords do not match.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+        {
+            throw new InvalidOperationException("Password must be at least 6 characters.");
+        }
+
+        var email = request.Email.Trim().ToLowerInvariant();
+
+        var verification = await _verificationRepository.GetByEmailAsync(email, cancellationToken)
+            ?? throw new InvalidOperationException("No pending password reset found for this email.");
+
+        if (verification.PasswordHash != PasswordResetSentinel)
+        {
+            throw new InvalidOperationException("No pending password reset found for this email.");
+        }
+
+        if (DateTime.UtcNow > verification.ExpiryTime)
+        {
+            await _verificationRepository.DeleteAsync(verification, cancellationToken);
+            throw new InvalidOperationException("Reset code has expired. Please request a new one.");
+        }
+
+        if (verification.AttemptCount >= 5)
+        {
+            throw new InvalidOperationException("Too many attempts. Please request a new code.");
+        }
+
+        if (verification.Code != request.Code.Trim())
+        {
+            verification.AttemptCount++;
+            await _verificationRepository.UpdateAsync(verification, cancellationToken);
+            throw new InvalidOperationException("Invalid reset code.");
+        }
+
+        var user = await _userRepository.GetByEmailAsync(email, cancellationToken)
+            ?? throw new InvalidOperationException("User not found.");
+
+        user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
+        user.UpdatedAtUtc = DateTime.UtcNow;
+        await _userRepository.UpdateAsync(user, cancellationToken);
+        await _verificationRepository.DeleteAsync(verification, cancellationToken);
+
+        return new MessageResponse("Password has been reset successfully.");
+    }
+
     public async Task DeleteAccountAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken)

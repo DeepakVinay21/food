@@ -33,6 +33,24 @@ public class InMemoryNotificationRepository : INotificationRepository
         return Task.CompletedTask;
     }
 
+    public Task DeleteByBatchAndTypeAsync(Guid batchId, string notificationType, CancellationToken cancellationToken = default)
+    {
+        lock (Sync)
+        {
+            Logs.RemoveAll(l => l.ProductBatchId == batchId && l.NotificationType == notificationType);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteAllByUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        lock (Sync)
+        {
+            Logs.RemoveAll(l => l.UserId == userId);
+        }
+        return Task.CompletedTask;
+    }
+
     public Task<List<NotificationLog>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         lock (Sync)

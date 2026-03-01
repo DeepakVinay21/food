@@ -6,3 +6,5 @@ public record VerifyRequest(string Email, string Code);
 public record ResendRequest(string Email);
 public record AuthResponse(Guid UserId, string Email, string AccessToken);
 public record MessageResponse(string Message);
+public record ForgotPasswordRequest(string Email);
+public record ResetPasswordRequest(string Email, string Code, string NewPassword, string ConfirmNewPassword);

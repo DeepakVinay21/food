@@ -4,32 +4,34 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, Camera, ClipboardList, ChefHat, Clock, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const slides = [
-  {
-    title: "Scan Products Instantly",
-    description: "Use your camera to detect product name and expiry date automatically.",
-    icon: Camera,
-    color: "bg-green-100 text-green-600",
-  },
-  {
-    title: "Track Your Pantry",
-    description: "Manage all your stored items in one smart place.",
-    icon: ClipboardList,
-    color: "bg-blue-100 text-blue-600",
-  },
-  {
-    title: "Cook Before It Expires",
-    description: "Get recipe suggestions based on your available ingredients.",
-    icon: ChefHat,
-    color: "bg-orange-100 text-orange-600",
-  }
-];
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 export default function Onboarding() {
   const [showSplash, setShowSplash] = useState(true);
   const [currentSlide, setCurrentSlide] = useState(0);
   const navigate = useNavigate();
+  const { t } = useTranslation();
+
+  const slides = [
+    {
+      title: t("onboarding.slide1Title"),
+      description: t("onboarding.slide1Desc"),
+      icon: Camera,
+      color: "bg-green-100 text-green-600",
+    },
+    {
+      title: t("onboarding.slide2Title"),
+      description: t("onboarding.slide2Desc"),
+      icon: ClipboardList,
+      color: "bg-blue-100 text-blue-600",
+    },
+    {
+      title: t("onboarding.slide3Title"),
+      description: t("onboarding.slide3Desc"),
+      icon: ChefHat,
+      color: "bg-orange-100 text-orange-600",
+    }
+  ];
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 2000);
@@ -55,8 +57,8 @@ export default function Onboarding() {
             </div>
           </div>
         </div>
-        <h1 className="text-3xl font-bold mb-2">Food Expiration Tracker</h1>
-        <p className="text-lg opacity-90 mb-8">Reduce Waste. Cook Smart.</p>
+        <h1 className="text-3xl font-bold mb-2">{t("onboarding.appName")}</h1>
+        <p className="text-lg opacity-90 mb-8">{t("onboarding.tagline")}</p>
         <Loader2 className="h-8 w-8 animate-spin opacity-50" />
       </div>
     );
@@ -68,7 +70,7 @@ export default function Onboarding() {
     <div className="flex-1 flex flex-col p-8 bg-background h-full">
       <div className="flex justify-end pt-4">
         <Button variant="ghost" onClick={() => navigate("/")} className="text-muted-foreground font-semibold">
-          Skip
+          {t("onboarding.skip")}
         </Button>
       </div>
 
@@ -83,24 +85,23 @@ export default function Onboarding() {
       </div>
 
       <div className="flex flex-col gap-8 pb-12 items-center">
-        {/* Progress dots */}
         <div className="flex gap-2">
           {slides.map((_, i) => (
-            <div 
-              key={i} 
+            <div
+              key={i}
               className={cn(
-                "h-2 rounded-full transition-all duration-300", 
+                "h-2 rounded-full transition-all duration-300",
                 currentSlide === i ? "w-8 bg-primary" : "w-2 bg-muted-foreground/30"
-              )} 
+              )}
             />
           ))}
         </div>
 
-        <Button 
-          onClick={handleNext} 
+        <Button
+          onClick={handleNext}
           className="w-full h-14 rounded-2xl text-lg font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
         >
-          {currentSlide === slides.length - 1 ? "Get Started" : "Next"}
+          {currentSlide === slides.length - 1 ? t("onboarding.getStarted") : t("onboarding.next")}
           <ChevronRight className="h-5 w-5" />
         </Button>
       </div>

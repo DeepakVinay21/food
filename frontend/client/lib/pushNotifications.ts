@@ -1,6 +1,8 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { api } from "./api";
+import { toast } from "sonner";
+import { playNotificationSound } from "./notificationSounds";
 
 let initialized = false;
 
@@ -32,7 +34,10 @@ export async function initPushNotifications(authToken: string) {
   });
 
   PushNotifications.addListener("pushNotificationReceived", (notification) => {
-    console.log("Push received (foreground):", notification);
+    const title = notification.title || "Expiry Alert";
+    const body = notification.body || "";
+    playNotificationSound();
+    toast(title, { description: body, duration: 5000 });
   });
 
   PushNotifications.addListener("pushNotificationActionPerformed", (action) => {

@@ -263,6 +263,61 @@ export function setupNotificationListeners(): void {
   });
 }
 
+// ── Fire an immediate local notification (for testing / instant alerts) ──
+
+export async function fireInstantNotification(title: string, body: string): Promise<void> {
+  // On native: use Capacitor LocalNotifications
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const perm = await LocalNotifications.requestPermissions();
+      if (perm.display !== "granted") return;
+
+      try {
+        await LocalNotifications.createChannel({
+          id: "foodtracker_alerts",
+          name: "Food Expiry Alerts",
+          description: "Notifications about expiring food items",
+          importance: 5,
+          sound: "default",
+          vibration: true,
+        });
+      } catch { /* channel may exist */ }
+
+      await LocalNotifications.schedule({
+        notifications: [{
+          id: Math.floor(Math.random() * 2147483647),
+          title,
+          body,
+          schedule: { at: new Date(Date.now() + 1000) },
+          sound: "default",
+          channelId: "foodtracker_alerts",
+          smallIcon: "ic_launcher",
+          largeIcon: "ic_launcher",
+        }],
+      });
+    } catch (err) {
+      console.error("Failed to fire instant notification:", err);
+    }
+    return;
+  }
+
+  // On web: use browser Notification API
+  if ("Notification" in window) {
+    if (Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+    if (Notification.permission === "granted") {
+      try {
+        new Notification(title, {
+          body,
+          icon: "/icons/icon-192x192.png",
+          requireInteraction: false,
+        });
+      } catch { /* some browsers block constructor */ }
+    }
+  }
+}
+
 // ── Unread count & mark as read ──────────────────────────────────────────
 
 export function getUnreadCount(): number {

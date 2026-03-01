@@ -4,6 +4,10 @@ export type AuthResponse = {
   accessToken: string;
 };
 
+export type SendVerificationResponse = {
+  message: string;
+};
+
 export type Dashboard = {
   totalProducts: number;
   expiringSoonCount: number;
@@ -92,16 +96,19 @@ export type ProfileDto = {
   role: string;
   firstName: string;
   lastName: string;
-  age?: number | null;
   profilePhotoDataUrl?: string | null;
 };
 
 export type NotificationItem = {
   id: string;
   notificationType: string;
+  title?: string | null;
+  body?: string | null;
   sentAtUtc: string;
   success: boolean;
   errorMessage?: string | null;
+  productId?: string | null;
+  productName?: string | null;
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
@@ -134,14 +141,21 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
     } catch {
       // ignore
     }
+    if (response.status === 401 && token) {
+      localStorage.removeItem("foodtrack_token");
+      localStorage.removeItem("foodtrack_email");
+      window.location.href = "/login";
+    }
     throw new Error(message);
   }
 
-  if (response.status === 204) {
+  if (response.status === 204 || response.status === 202) {
     return undefined as T;
   }
 
-  return (await response.json()) as T;
+  const text = await response.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 function makeForm(file: Blob | File, fileName: string, quantity: number) {
@@ -169,28 +183,34 @@ function makeMultiImageForm(images: Array<{ file: Blob | File; fileName: string 
 }
 
 export const api = {
-  register: (body: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string; age?: number | null }) =>
-    request<{ message: string }>("/api/v1/auth/register", {
+  sendVerification: (body: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string }) =>
+    request<SendVerificationResponse>("/api/v1/auth/register", {
       method: "POST",
       body: JSON.stringify(body),
     }),
 
-  verify: (email: string, code: string) =>
+  verifyAndRegister: (email: string, code: string) =>
     request<AuthResponse>("/api/v1/auth/verify", {
       method: "POST",
       body: JSON.stringify({ email, code }),
-    }),
-
-  resend: (email: string) =>
-    request<{ message: string }>("/api/v1/auth/resend", {
-      method: "POST",
-      body: JSON.stringify({ email }),
     }),
 
   login: (email: string, password: string) =>
     request<AuthResponse>("/api/v1/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
+    }),
+
+  forgotPassword: (email: string) =>
+    request<SendVerificationResponse>("/api/v1/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (email: string, code: string, newPassword: string, confirmNewPassword: string) =>
+    request<{ message: string }>("/api/v1/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ email, code, newPassword, confirmNewPassword }),
     }),
 
   dashboard: (token: string) => request<Dashboard>("/api/v1/dashboard", {}, token),
@@ -209,6 +229,9 @@ export const api = {
 
   deleteBatch: (token: string, batchId: string) =>
     request<void>(`/api/v1/products/batch/${batchId}`, { method: "DELETE" }, token),
+
+  deleteProduct: (token: string, productId: string) =>
+    request<void>(`/api/v1/products/${productId}`, { method: "DELETE" }, token),
 
   recipes: (token: string) => request<RecipeSuggestion[]>("/api/v1/recipes/suggestions", {}, token),
 
@@ -231,11 +254,13 @@ export const api = {
     request<OcrImageResponse>("/api/v1/ocr/scan-image", { method: "POST", body: makeMultiImageForm(images, quantity) }, token),
 
   runNotifications: (token: string) => request<void>("/api/v1/notifications/run-daily-job", { method: "POST" }, token),
+  testNotification: (token: string) => request<{ message: string }>("/api/v1/notifications/test", { method: "POST" }, token),
   notifications: (token: string) => request<NotificationItem[]>("/api/v1/notifications/history", {}, token),
+  clearNotifications: (token: string) => request<void>("/api/v1/notifications/clear", { method: "DELETE" }, token),
 
   profile: (token: string) => request<ProfileDto>("/api/v1/profile/me", {}, token),
 
-  updateProfile: (token: string, body: { firstName: string; lastName: string; age?: number | null; profilePhotoDataUrl?: string | null }) =>
+  updateProfile: (token: string, body: { firstName: string; lastName: string; profilePhotoDataUrl?: string | null }) =>
     request<void>("/api/v1/profile", {
       method: "PUT",
       body: JSON.stringify(body),

@@ -6,7 +6,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { api, OcrImagePreviewResponse, FieldConfidence } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type ScanMode = "choose" | "camera" | "manual" | "review";
 
@@ -213,24 +213,16 @@ function inferCategory(name: string): string {
   return "General";
 }
 
-function ConfidenceBadge({ score }: { score: number }) {
-  if (score >= 70) return <span className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 px-2 py-0.5 rounded-full">High ({score}%)</span>;
-  if (score >= 40) return <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10 px-2 py-0.5 rounded-full">Medium ({score}%)</span>;
-  return <span className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 px-2 py-0.5 rounded-full">Low ({score}%) - Verify</span>;
-}
-
 export default function Scan() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const sourceParam = searchParams.get("source") || "home";
   const modeParam = searchParams.get("mode");
   const closePath = sourceParam === "pantry" ? "/pantry" : "/";
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const mountedRef = useRef(true);
   const autoStartedRef = useRef(false);
 
   const [mode, setMode] = useState<ScanMode>("camera");
@@ -265,29 +257,76 @@ export default function Scan() {
   const qc = useQueryClient();
   const navigate = useNavigate();
 
+  const CATEGORY_TRANSLATION_MAP: Record<string, string> = useMemo(() => ({
+    General: "category.general",
+    Dairy: "category.dairy",
+    Fruits: "category.fruits",
+    Vegetables: "category.vegetables",
+    Meat: "category.meat",
+    "Bakery Item": "category.bakeryItem",
+    Snacks: "category.snacks",
+    Grains: "category.grains",
+    Beverages: "category.beverages",
+    Condiments: "category.condiments",
+    Frozen: "category.frozen",
+  }), []);
+
+  const categoryLabel = useCallback((cat: string): string => {
+    const key = CATEGORY_TRANSLATION_MAP[cat];
+    return key ? t(key as any) : cat;
+  }, [t, CATEGORY_TRANSLATION_MAP]);
+
+  const ALERT_OPTIONS = useMemo(() => [
+    { value: "7d", label: t("alert.7daysBefore") },
+    { value: "3d", label: t("alert.3daysBefore") },
+    { value: "1d", label: t("alert.1dayBefore") },
+    { value: "on_expiry", label: t("alert.onExpiryDay") },
+    { value: "none", label: t("alert.noAlert") },
+  ], [t]);
+
+  const confidenceLabel = useCallback((level: string): string => {
+    if (level === "high") return t("scan.highConfidence");
+    if (level === "medium") return t("scan.mediumConfidence");
+    return t("scan.lowConfidence");
+  }, [t]);
+
+  const ConfidenceBadge = useCallback(({ score }: { score: number }) => {
+    if (score >= 70) return <span className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 px-2 py-0.5 rounded-full">{t("scan.confidenceHigh", { score })}</span>;
+    if (score >= 40) return <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10 px-2 py-0.5 rounded-full">{t("scan.confidenceMedium", { score })}</span>;
+    return <span className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 px-2 py-0.5 rounded-full">{t("scan.confidenceLow", { score })}</span>;
+  }, [t]);
+
   const invalidateAll = useCallback(() => {
     qc.invalidateQueries({ queryKey: ["pantry"] });
-    qc.invalidateQueries({ queryKey: ["products-home"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
     qc.invalidateQueries({ queryKey: ["recipes"] });
   }, [qc]);
 
+  const streamRef = useRef<MediaStream | null>(null);
+
   const stopCamera = useCallback(() => {
-    // Stop all tracks from the stored stream ref (works even after unmount)
+    // Stop via ref first (works even if video element is unmounted)
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    // Also clean up the video element
+    const stream = videoRef.current?.srcObject as MediaStream | null;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
     if (videoRef.current) videoRef.current.srcObject = null;
     setStreaming(false);
   }, []);
 
   const startCamera = useCallback(async () => {
     setError("");
+    // Stop any existing stream first
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     const constraints: MediaStreamConstraints[] = isIOS
       ? [
-          // iOS Safari needs exact facingMode first
           { video: { facingMode: { exact: "environment" } }, audio: false },
           { video: { facingMode: "environment" }, audio: false },
           { video: true, audio: false },
@@ -301,15 +340,10 @@ export default function Scan() {
     for (const constraint of constraints) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia(constraint);
-        if (!mountedRef.current) {
-          // Component unmounted while waiting for camera — stop immediately
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
+        // Store in ref so cleanup can always find it
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          // Wait for metadata before playing
           await new Promise<void>((resolve) => {
             const video = videoRef.current!;
             const onLoaded = () => { video.removeEventListener("loadedmetadata", onLoaded); resolve(); };
@@ -317,15 +351,15 @@ export default function Scan() {
             setTimeout(() => { video.removeEventListener("loadedmetadata", onLoaded); resolve(); }, 3000);
           });
           await videoRef.current.play();
-          // Watch for stream interruption (e.g., iOS background/lock)
           stream.getTracks().forEach((track) => {
             track.onended = () => {
+              streamRef.current = null;
               setStreaming(false);
-              // Only auto-recover if still mounted and on camera mode
-              if (!mountedRef.current) return;
               setTimeout(() => {
-                if (mountedRef.current && document.visibilityState === "visible") {
+                if (document.visibilityState === "visible") {
                   startCamera();
+                } else {
+                  setError(t("scan.cameraStreamEnded"));
                 }
               }, 1000);
             };
@@ -337,26 +371,25 @@ export default function Scan() {
       } catch (err) {
         if (err instanceof DOMException) {
           if (err.name === "NotAllowedError") {
-            setError("Camera permission denied. Please allow camera access in app settings.");
+            setError(t("scan.cameraPermissionDenied"));
             return;
           }
           if (err.name === "NotFoundError") {
-            setError("No camera found on this device. Use file upload instead.");
+            setError(t("scan.noCameraFound"));
             return;
           }
         }
-        // Try next constraint set
       }
     }
-    setError("Unable to access camera. Check app permissions or use file upload.");
-  }, []);
+    setError(t("scan.unableToAccessCamera"));
+  }, [t]);
 
   const cropCenterForOcr = useCallback(async (source: CanvasImageSource, width: number, height: number) => {
     const out = document.createElement("canvas");
     const ctx = out.getContext("2d");
     if (!ctx) return null;
-    const cropW = Math.floor(width * 0.82);
-    const cropH = Math.floor(height * 0.58);
+    const cropW = Math.floor(width * 0.92);
+    const cropH = Math.floor(height * 0.88);
     const sx = Math.floor((width - cropW) / 2);
     const sy = Math.floor((height - cropH) / 2);
     out.width = cropW;
@@ -367,8 +400,9 @@ export default function Scan() {
 
   const previewMutation = useMutation({
     mutationFn: async (scanImages: Array<{ file: Blob | File; name: string }>) => {
-      if (scanImages.length === 0) throw new Error("Please add at least one image.");
-      return api.scanMultiPreview(token!, scanImages.map((i) => ({ file: i.file, fileName: i.name })), reviewForm.quantity);
+      if (!token) throw new Error("Authentication required. Please log in again.");
+      if (scanImages.length === 0) throw new Error(t("scan.addAtLeastOneImage"));
+      return api.scanMultiPreview(token, scanImages.map((i) => ({ file: i.file, fileName: i.name })), reviewForm.quantity);
     },
     onSuccess: (data) => {
       setPreview(data);
@@ -435,14 +469,17 @@ export default function Scan() {
       }
       stopCamera();
     },
-    onError: (e) => setError(e instanceof Error ? e.message : "OCR failed"),
+    onError: (e) => setError(e instanceof Error ? e.message : t("scan.ocrFailed")),
   });
 
   const addMutation = useMutation({
-    mutationFn: () => api.addProduct(token!, {
-      name: reviewForm.name, categoryName: reviewForm.categoryName,
-      expiryDate: reviewForm.expiryDate, quantity: reviewForm.quantity,
-    }),
+    mutationFn: () => {
+      if (!token) throw new Error("Authentication required. Please log in again.");
+      return api.addProduct(token, {
+        name: reviewForm.name, categoryName: reviewForm.categoryName,
+        expiryDate: reviewForm.expiryDate, quantity: reviewForm.quantity,
+      });
+    },
     onSuccess: async () => {
       saveProductAlert(reviewForm.name, reviewForm.expiryDate, alertTiming);
       // Save captured image for pantry display
@@ -455,23 +492,24 @@ export default function Scan() {
       invalidateAll();
       navigate("/pantry");
     },
-    onError: (e) => setError(e instanceof Error ? e.message : "Add failed"),
+    onError: (e) => setError(e instanceof Error ? e.message : t("scan.addFailed")),
   });
 
   const splitAddMutation = useMutation({
     mutationFn: async () => {
+      if (!token) throw new Error("Authentication required. Please log in again.");
       const items = detectedItems.length > 0 ? detectedItems : productCandidates.map((name) => ({
         name, categoryName: inferCategory(name),
         expiryDate: getCategoryFallbackDate(inferCategory(name)),
         daysLeftToExpire: 0, confidenceScore: 0,
       }));
-      await Promise.all(items.map((item) => api.addProduct(token!, {
+      await Promise.all(items.map((item) => api.addProduct(token, {
         name: item.name, categoryName: item.categoryName,
         expiryDate: item.expiryDate, quantity: Math.max(1, reviewForm.quantity),
       })));
     },
     onSuccess: () => { invalidateAll(); navigate("/pantry"); },
-    onError: (e) => setError(e instanceof Error ? e.message : "Add failed"),
+    onError: (e) => setError(e instanceof Error ? e.message : t("scan.addFailed")),
   });
 
   const daysLeft = useMemo(() => {
@@ -481,20 +519,20 @@ export default function Scan() {
 
   const confidenceScore = (preview?.extracted as any)?.confidenceScore ?? (preview?.extracted?.isConfidenceLow ? 25 : 70);
 
-  // Mark mounted/unmounted and ensure camera is stopped on unmount
+  // Always stop camera + revoke URLs on unmount
   useEffect(() => {
-    mountedRef.current = true;
     return () => {
-      mountedRef.current = false;
-      // Directly stop tracks from ref to guarantee cleanup even if videoRef is null
+      // Stop stream via ref (works even after component unmount)
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
       }
-      if (videoRef.current) videoRef.current.srcObject = null;
+      const stream = videoRef.current?.srcObject as MediaStream | null;
+      if (stream) stream.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
+  // Revoke preview URL when it changes
   useEffect(() => {
     return () => {
       if (capturedPreviewUrl) URL.revokeObjectURL(capturedPreviewUrl);
@@ -513,18 +551,18 @@ export default function Scan() {
         if (navigator.mediaDevices?.getUserMedia) {
           startCamera();
         } else {
-          setError("Camera not available. Use file upload instead.");
+          setError(t("scan.cameraNotAvailable"));
         }
       }
     }
-  }, [startCamera, modeParam]);
+  }, [startCamera, modeParam, t]);
 
   // Handle orientation changes to restart camera with correct resolution
   useEffect(() => {
     const handleOrientationChange = () => {
-      if (streaming && mountedRef.current && videoRef.current?.srcObject) {
+      if (streaming && videoRef.current?.srcObject) {
         stopCamera();
-        setTimeout(() => { if (mountedRef.current) startCamera(); }, 300);
+        setTimeout(() => startCamera(), 300);
       }
     };
     window.addEventListener("orientationchange", handleOrientationChange);
@@ -535,10 +573,10 @@ export default function Scan() {
     };
   }, [streaming, stopCamera, startCamera]);
 
-  // Auto-recover camera when returning from background/lock screen (only if still on camera mode)
+  // Auto-recover camera when returning from background/lock screen
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && mode === "camera" && !streaming && mountedRef.current) {
+      if (document.visibilityState === "visible" && mode === "camera" && !streaming) {
         startCamera();
       }
     };
@@ -573,28 +611,14 @@ export default function Scan() {
   const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(e.target.files ?? []);
     if (picked.length === 0) return;
-    Promise.all(
-      picked.map(async (file) => {
-        const bitmap = await createImageBitmap(file);
-        const cropped = await cropCenterForOcr(bitmap, bitmap.width, bitmap.height);
-        bitmap.close();
-        return { file: cropped ?? file, name: file.name };
-      }),
-    ).then((processed) => {
-      if (processed.length > 0) {
-        const previewUrl = URL.createObjectURL(processed[0].file);
-        if (capturedPreviewUrl) URL.revokeObjectURL(capturedPreviewUrl);
-        setCapturedPreviewUrl(previewUrl);
-        stopCamera();
-        processCaptured(processed.slice(0, 4));
-      }
-    }).catch(() => {
-      for (const file of picked) {
-        setImages((prev) => prev.length >= 4 ? prev : [...prev, { file, name: file.name }]);
-      }
-    });
+    const processed = picked.slice(0, 4).map((file) => ({ file, name: file.name }));
+    const previewUrl = URL.createObjectURL(processed[0].file);
+    if (capturedPreviewUrl) URL.revokeObjectURL(capturedPreviewUrl);
+    setCapturedPreviewUrl(previewUrl);
+    stopCamera();
+    processCaptured(processed);
     e.target.value = "";
-  }, [capturedPreviewUrl, stopCamera, cropCenterForOcr, processCaptured]);
+  }, [capturedPreviewUrl, stopCamera, processCaptured]);
 
   const updateDetectedItem = useCallback((index: number, field: keyof DetectedItem, value: string) => {
     setDetectedItems((prev) => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
@@ -637,7 +661,7 @@ export default function Scan() {
         expiryDate: normalizedExp || fallbackExp,
       }));
     } catch {
-      // OCR failed silently — user can still fill manually
+      // OCR failed silently -- user can still fill manually
     } finally {
       setManualScanning(false);
     }
@@ -668,7 +692,7 @@ export default function Scan() {
           <button onClick={() => navigate(closePath)} className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
             <ArrowLeft className="h-5 w-5 text-foreground" />
           </button>
-          <h1 className="text-xl font-bold text-foreground">Add Item</h1>
+          <h1 className="text-xl font-bold text-foreground">{t("scan.addItem")}</h1>
         </div>
 
         <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-6">
@@ -684,55 +708,49 @@ export default function Scan() {
                 ) : (
                   <>
                     <Upload className="h-6 w-6 text-muted-foreground" />
-                    <span className="text-[10px] text-muted-foreground font-medium">Add Photo</span>
+                    <span className="text-[10px] text-muted-foreground font-medium">{t("scan.addPhoto")}</span>
                   </>
                 )}
               </button>
               {manualScanning && (
-                <p className="text-[10px] text-primary font-medium animate-pulse">Scanning image...</p>
+                <p className="text-[10px] text-primary font-medium animate-pulse">{t("scan.scanningImage")}</p>
               )}
               {productImageUrl && !manualScanning && (
                 <button onClick={() => { if (productImageUrl) URL.revokeObjectURL(productImageUrl); setProductImageUrl(null); setProductImageFile(null); }} className="text-[10px] text-red-500 font-medium">
-                  Remove Photo
+                  {t("scan.removePhoto")}
                 </button>
               )}
               <input ref={productImageInputRef} type="file" accept="image/*" className="hidden" onChange={onProductImageChange} />
             </div>
 
             <div>
-              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Product Name</label>
-              <Input placeholder="e.g. Milk, Bread, Eggs" value={reviewForm.name} onChange={(e) => handleNameChange(e.target.value)} className="rounded-xl" />
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">{t("scan.productNameLabel")}</label>
+              <Input placeholder={t("scan.productNameFieldPlaceholder")} value={reviewForm.name} onChange={(e) => handleNameChange(e.target.value)} className="rounded-xl" />
             </div>
 
             <div>
-              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Category</label>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">{t("scan.categoryLabelForm")}</label>
               <select className="h-10 rounded-xl border border-input px-3 text-sm bg-background text-foreground w-full" value={reviewForm.categoryName} onChange={(e) => setReviewForm((s) => ({ ...s, categoryName: e.target.value }))}>
-                {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                {CATEGORIES.map((cat) => <option key={cat} value={cat}>{categoryLabel(cat)}</option>)}
               </select>
             </div>
 
             <div>
-              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Expiry Date</label>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">{t("scan.expiryDateLabel")}</label>
               <Input type="date" value={reviewForm.expiryDate} onChange={(e) => setReviewForm((s) => ({ ...s, expiryDate: e.target.value }))} className="rounded-xl" />
             </div>
 
             <div>
-              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">Quantity</label>
+              <label className="text-[10px] text-muted-foreground font-medium mb-1 block">{t("scan.quantityLabel")}</label>
               <Input type="number" min={1} value={reviewForm.quantity} onChange={(e) => setReviewForm((s) => ({ ...s, quantity: Number(e.target.value) || 1 }))} className="rounded-xl" />
             </div>
 
             <div>
               <label className="text-[10px] text-muted-foreground font-medium flex items-center gap-1 mb-1.5">
-                <Bell className="h-3 w-3" /> Expiry Alert
+                <Bell className="h-3 w-3" /> {t("scan.expiryAlert")}
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {[
-                  { value: "7d", label: "7 Days Before" },
-                  { value: "3d", label: "3 Days Before" },
-                  { value: "1d", label: "1 Day Before" },
-                  { value: "on_expiry", label: "On Expiry Day" },
-                  { value: "none", label: "No Alert" },
-                ].map((opt) => (
+                {ALERT_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => setAlertTiming(opt.value)}
@@ -754,7 +772,7 @@ export default function Scan() {
               className="rounded-2xl h-12 font-bold mt-1"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
-              {addMutation.isPending ? "Saving..." : "Add to Pantry"}
+              {addMutation.isPending ? t("scan.saving") : t("scan.addToPantry")}
             </Button>
 
             {error && <p className="text-xs text-red-600 text-center">{error}</p>}
@@ -766,58 +784,72 @@ export default function Scan() {
 
   // ── Camera / Review mode ──
   return (
-    <div className="flex-1 flex flex-col p-6 gap-6 h-full animate-in zoom-in duration-300 pb-28">
+    <div className="flex-1 flex flex-col p-4 gap-4 h-full animate-in zoom-in duration-300 pb-28">
       {mode !== "review" && (
-        <div className="flex-1 bg-black rounded-[3rem] flex flex-col items-center justify-center text-white relative overflow-hidden shadow-2xl">
-          <div className="absolute inset-0 border-[2px] border-primary/40 m-12 rounded-[2rem]">
-            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl" />
-            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl" />
-            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl" />
-            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-xl" />
-            <div className="absolute left-4 right-4 h-0.5 bg-primary/80 shadow-[0_0_15px_rgba(46,204,113,0.8)] animate-scan" />
+        <>
+          <div className="flex-1 bg-black rounded-[2.5rem] flex flex-col items-center justify-center text-white relative overflow-hidden shadow-2xl">
+            <div className="absolute inset-6 border-[2px] border-primary/40 rounded-[1.5rem] pointer-events-none">
+              <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl" />
+              <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl" />
+              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl" />
+              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-xl" />
+              <div className="absolute left-4 right-4 h-0.5 bg-primary/80 shadow-[0_0_15px_rgba(46,204,113,0.8)] animate-scan" />
+            </div>
+
+            {/* Video element is always in DOM so stream can attach before streaming state updates */}
+            <video ref={videoRef} className={`absolute inset-0 w-full h-full object-cover ${streaming ? "" : "hidden"}`} muted playsInline />
+
+            {!streaming && capturedPreviewUrl ? (
+              <img src={capturedPreviewUrl} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
+            ) : !streaming ? (
+              <>
+                <Camera className="h-16 w-16 opacity-30 mb-4" />
+                <div className="text-center px-8 z-10 flex flex-col gap-2">
+                  {error ? (
+                    <>
+                      <p className="text-sm font-bold tracking-wide text-red-400">{error}</p>
+                      <button onClick={() => uploadInputRef.current?.click()} className="mt-2 bg-primary text-white px-5 py-2.5 rounded-xl text-sm font-bold active:scale-95 transition-transform">
+                        <Upload className="h-4 w-4 inline mr-2" />{t("scan.uploadFromGallery")}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-bold tracking-wide">{t("scan.pointCamera")}</p>
+                      <p className="text-[10px] opacity-60">{t("scan.captureExpiryLabel")}</p>
+                    </>
+                  )}
+                </div>
+              </>
+            ) : null}
+
+            <button onClick={() => { stopCamera(); navigate(closePath); }} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center z-20">
+              <X className="h-5 w-5 text-white" />
+            </button>
+
+            <input ref={uploadInputRef} type="file" accept="image/*" multiple className="hidden" onChange={onFileChange} />
+            <canvas ref={canvasRef} className="hidden" />
           </div>
 
-          <video ref={videoRef} autoPlay muted playsInline className={cn("absolute inset-0 w-full h-full object-cover", !streaming && "hidden")} />
-          {!streaming && capturedPreviewUrl ? (
-            <img src={capturedPreviewUrl} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
-          ) : !streaming ? (
-            <>
-              <Camera className="h-16 w-16 opacity-30 mb-4" />
-              <div className="text-center px-8 z-10 flex flex-col gap-2">
-                <p className="text-sm font-bold tracking-wide">Point camera at the product</p>
-                <p className="text-[10px] opacity-60">Capture the expiry date label clearly</p>
-              </div>
-            </>
-          ) : null}
-
-          <div className="absolute bottom-10 flex gap-8 items-center px-8 w-full justify-center z-20">
-            <button onClick={() => galleryInputRef.current?.click()} className="w-12 h-12 rounded-full bg-card/20 backdrop-blur-md flex items-center justify-center active:scale-95 transition-transform">
-              <Upload className="h-5 w-5 text-white" />
+          <div className="flex items-center justify-center gap-6 py-2">
+            <button onClick={() => uploadInputRef.current?.click()} className="w-14 h-14 rounded-full bg-muted/80 border border-border flex items-center justify-center active:scale-95 transition-transform" title={t("scan.uploadFromGallery")}>
+              <Upload className="h-5 w-5 text-foreground" />
             </button>
-            <button onClick={streaming ? captureSnapshot : startCamera} className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center p-1 active:scale-95 transition-transform">
-              <div className="w-full h-full rounded-full bg-card shadow-lg" />
+            <button onClick={streaming ? captureSnapshot : error ? () => uploadInputRef.current?.click() : startCamera} className="w-[72px] h-[72px] rounded-full border-4 border-primary flex items-center justify-center p-1 active:scale-95 transition-transform shadow-lg shadow-primary/20">
+              <div className="w-full h-full rounded-full bg-primary/20 border-2 border-primary" />
             </button>
-            <div className="w-12 h-12" />
+            <div className="w-14 h-14" />
           </div>
-
-          <button onClick={() => navigate(closePath)} className="absolute top-6 right-6 w-10 h-10 rounded-full bg-card/10 backdrop-blur-md flex items-center justify-center z-20">
-            <X className="h-5 w-5 text-white" />
-          </button>
-
-          <input ref={uploadInputRef} type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={onFileChange} />
-          <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden" onChange={onFileChange} />
-          <canvas ref={canvasRef} className="hidden" />
-        </div>
+        </>
       )}
 
       {mode === "camera" && previewMutation.isPending && (
-        <div className="text-center text-sm text-muted-foreground font-medium animate-pulse">Processing image...</div>
+        <div className="text-center text-sm text-muted-foreground font-medium animate-pulse">{t("scan.processingImage")}</div>
       )}
 
       {mode === "review" && (
         <div className="bg-card rounded-2xl border p-4 grid gap-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold flex items-center gap-2"><PencilLine className="h-4 w-4" />Review and Edit</p>
+            <p className="text-sm font-semibold flex items-center gap-2"><PencilLine className="h-4 w-4" />{t("scan.reviewAndEdit")}</p>
             {preview && <ConfidenceBadge score={confidenceScore} />}
           </div>
 
@@ -825,29 +857,29 @@ export default function Scan() {
             <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl p-3 flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
               <p className="text-[11px] text-amber-800 dark:text-amber-200">
-                {needsHumanReview ? "Some fields have low confidence. Please verify" : "Low confidence extraction. Please verify"}
+                {needsHumanReview ? t("scan.lowConfidenceWarning") : t("scan.lowConfidenceGeneric")}
                 {fieldConfidence && (
                   <span>
-                    {fieldConfidence.nameConfidence === "low" && " the product name,"}
-                    {fieldConfidence.expiryConfidence === "low" && " the expiry date,"}
-                    {fieldConfidence.categoryConfidence === "low" && " the category,"}
+                    {fieldConfidence.nameConfidence === "low" && t("scan.theProductName")}
+                    {fieldConfidence.expiryConfidence === "low" && t("scan.theExpiryDate")}
+                    {fieldConfidence.categoryConfidence === "low" && t("scan.theCategory")}
                   </span>
-                )} before saving.
+                )}{t("scan.beforeSaving")}
               </p>
             </div>
           )}
 
           <div>
             <div className="flex items-center justify-between mb-0.5">
-              <label className="text-[10px] text-muted-foreground font-medium">Product Name</label>
+              <label className="text-[10px] text-muted-foreground font-medium">{t("scan.productName")}</label>
               {fieldConfidence?.nameConfidence && (
                 <span className={`text-[9px] font-semibold ${fieldConfidence.nameConfidence === "high" ? "text-green-600" : fieldConfidence.nameConfidence === "medium" ? "text-amber-600" : "text-red-600"}`}>
-                  {fieldConfidence.nameConfidence} confidence
+                  {confidenceLabel(fieldConfidence.nameConfidence)}
                 </span>
               )}
             </div>
             <Input
-              placeholder="Product name" value={reviewForm.name}
+              placeholder={t("scan.productNamePlaceholder")} value={reviewForm.name}
               onChange={(e) => setReviewForm((s) => ({ ...s, name: e.target.value }))}
               className={fieldConfidence?.nameConfidence === "low" ? "border-red-400 ring-1 ring-red-200" : fieldConfidence?.nameConfidence === "medium" ? "border-amber-400 ring-1 ring-amber-200" : ""}
             />
@@ -860,10 +892,10 @@ export default function Scan() {
 
           <div>
             <div className="flex items-center justify-between mb-0.5">
-              <label className="text-[10px] text-muted-foreground font-medium">Category</label>
+              <label className="text-[10px] text-muted-foreground font-medium">{t("scan.categoryLabel")}</label>
               {fieldConfidence?.categoryConfidence && (
                 <span className={`text-[9px] font-semibold ${fieldConfidence.categoryConfidence === "high" ? "text-green-600" : fieldConfidence.categoryConfidence === "medium" ? "text-amber-600" : "text-red-600"}`}>
-                  {fieldConfidence.categoryConfidence} confidence
+                  {confidenceLabel(fieldConfidence.categoryConfidence)}
                 </span>
               )}
             </div>
@@ -871,21 +903,21 @@ export default function Scan() {
               className={`h-10 rounded-xl border border-input px-3 text-sm bg-background text-foreground w-full ${fieldConfidence?.categoryConfidence === "low" ? "border-red-400 ring-1 ring-red-200" : fieldConfidence?.categoryConfidence === "medium" ? "border-amber-400 ring-1 ring-amber-200" : ""}`}
               value={reviewForm.categoryName} onChange={(e) => setReviewForm((s) => ({ ...s, categoryName: e.target.value }))}
             >
-              {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+              {CATEGORIES.map((cat) => <option key={cat} value={cat}>{categoryLabel(cat)}</option>)}
             </select>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] text-muted-foreground font-medium">Mfg Date</label>
+              <label className="text-[10px] text-muted-foreground font-medium">{t("scan.mfgDate")}</label>
               <Input type="date" value={reviewForm.manufacturingDate} onChange={(e) => setReviewForm((s) => ({ ...s, manufacturingDate: e.target.value }))} />
             </div>
             <div>
               <div className="flex items-center justify-between mb-0.5">
-                <label className="text-[10px] text-muted-foreground font-medium">Expiry Date</label>
+                <label className="text-[10px] text-muted-foreground font-medium">{t("scan.expiryDate")}</label>
                 {fieldConfidence?.expiryConfidence && (
                   <span className={`text-[9px] font-semibold ${fieldConfidence.expiryConfidence === "high" ? "text-green-600" : fieldConfidence.expiryConfidence === "medium" ? "text-amber-600" : "text-red-600"}`}>
-                    {fieldConfidence.expiryConfidence} confidence
+                    {confidenceLabel(fieldConfidence.expiryConfidence)}
                   </span>
                 )}
               </div>
@@ -897,20 +929,14 @@ export default function Scan() {
             </div>
           </div>
 
-          <Input type="number" min={1} value={reviewForm.quantity} onChange={(e) => setReviewForm((s) => ({ ...s, quantity: Number(e.target.value) || 1 }))} placeholder="Quantity" />
+          <Input type="number" min={1} value={reviewForm.quantity} onChange={(e) => setReviewForm((s) => ({ ...s, quantity: Number(e.target.value) || 1 }))} placeholder={t("scan.quantityPlaceholder")} />
 
           <div>
             <label className="text-[10px] text-muted-foreground font-medium flex items-center gap-1 mb-1.5">
-              <Bell className="h-3 w-3" /> Expiry Alert
+              <Bell className="h-3 w-3" /> {t("scan.expiryAlert")}
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {[
-                { value: "7d", label: "7 Days Before" },
-                { value: "3d", label: "3 Days Before" },
-                { value: "1d", label: "1 Day Before" },
-                { value: "on_expiry", label: "On Expiry Day" },
-                { value: "none", label: "No Alert" },
-              ].map((opt) => (
+              {ALERT_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
                   onClick={() => setAlertTiming(opt.value)}
@@ -927,12 +953,12 @@ export default function Scan() {
           </div>
 
           <div className="text-xs text-muted-foreground">
-            <p>Days left: <strong className={daysLeft <= 3 ? "text-red-600" : daysLeft <= 7 ? "text-orange-600" : "text-green-600"}>{daysLeft}</strong></p>
+            <p>{t("scan.daysLeft")} <strong className={daysLeft <= 3 ? "text-red-600" : daysLeft <= 7 ? "text-orange-600" : "text-green-600"}>{daysLeft}</strong></p>
           </div>
 
           {reviewForm.rawText && (
             <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer">View extracted raw text</summary>
+              <summary className="cursor-pointer">{t("scan.viewExtractedRawText")}</summary>
               <pre className="whitespace-pre-wrap mt-2 bg-muted p-2 rounded-xl max-h-32 overflow-auto">{reviewForm.rawText}</pre>
             </details>
           )}
@@ -941,13 +967,13 @@ export default function Scan() {
             <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
               <input type="checkbox" checked={humanVerified} onChange={(e) => setHumanVerified(e.target.checked)} className="rounded border-gray-300 accent-primary" />
               <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-              I've verified the details above are correct
+              {t("scan.verifiedDetails")}
             </label>
           )}
 
           <Button onClick={() => addMutation.mutate()} disabled={addMutation.isPending || (needsHumanReview && !humanVerified)} className="rounded-2xl">
             <CheckCircle2 className="h-4 w-4 mr-2" />
-            {addMutation.isPending ? "Saving..." : "Confirm and Add to Pantry"}
+            {addMutation.isPending ? t("scan.saving") : t("scan.confirmAndAdd")}
           </Button>
 
           <Button variant="outline" className="rounded-2xl" onClick={() => {
@@ -962,13 +988,13 @@ export default function Scan() {
             startCamera();
           }}>
             <Camera className="h-4 w-4 mr-2" />
-            Retake Photo
+            {t("scan.retakePhoto")}
           </Button>
 
           {(detectedItems.length > 1 || productCandidates.length > 1) && (
             <>
               <button onClick={() => setShowSplitEdit(!showSplitEdit)} className="flex items-center justify-between w-full text-xs font-medium text-primary px-1">
-                <span>Split & Add All ({detectedItems.length || productCandidates.length} items)</span>
+                <span>{t("scan.splitAndAddAll", { count: detectedItems.length || productCandidates.length })}</span>
                 <ChevronDown className={`h-3 w-3 transition-transform ${showSplitEdit ? "rotate-180" : ""}`} />
               </button>
 
@@ -978,7 +1004,7 @@ export default function Scan() {
                     <div key={idx} className="grid grid-cols-[1fr_auto_auto_auto] gap-1 items-center text-xs">
                       <Input value={item.name} onChange={(e) => updateDetectedItem(idx, "name", e.target.value)} className="h-8 text-xs" />
                       <select value={item.categoryName} onChange={(e) => updateDetectedItem(idx, "categoryName", e.target.value)} className="h-8 rounded border border-input px-1 text-[10px] bg-background text-foreground w-20">
-                        {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                        {CATEGORIES.map((cat) => <option key={cat} value={cat}>{categoryLabel(cat)}</option>)}
                       </select>
                       <Input type="date" value={item.expiryDate} onChange={(e) => updateDetectedItem(idx, "expiryDate", e.target.value)} className="h-8 text-[10px] w-28" />
                       <button onClick={() => removeDetectedItem(idx)} className="text-red-400 hover:text-red-600 p-1"><X className="h-3 w-3" /></button>
@@ -988,7 +1014,7 @@ export default function Scan() {
               )}
 
               <Button variant="outline" onClick={() => splitAddMutation.mutate()} disabled={splitAddMutation.isPending} className="rounded-2xl">
-                {splitAddMutation.isPending ? "Adding all..." : `Split & Add All (${detectedItems.length || productCandidates.length})`}
+                {splitAddMutation.isPending ? t("scan.addingAll") : t("scan.splitAndAddAll", { count: detectedItems.length || productCandidates.length })}
               </Button>
             </>
           )}
@@ -996,7 +1022,6 @@ export default function Scan() {
       )}
 
       {error && <p className="text-xs text-red-600 text-center">{error}</p>}
-      <p className="text-xs text-muted-foreground text-center">Tip: add multiple clear images for better scan quality.</p>
     </div>
   );
 }

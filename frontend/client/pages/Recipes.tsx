@@ -7,10 +7,21 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useQuery } from "@tanstack/react-query";
 import { api, RecipeSuggestion } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
-const RecipeCard = ({ name, mealType, region, match, time, summary, image, featured, onClick }: {
-  name: string; mealType: string; region: string; match: number; time: string; summary: string; image: string; featured?: boolean; onClick?: () => void;
+const MEAL_BG: Record<string, string> = {
+  Breakfast: "from-amber-500 to-orange-600",
+  Lunch: "from-green-500 to-emerald-600",
+  Dinner: "from-indigo-500 to-purple-600",
+  Snacks: "from-pink-500 to-rose-600",
+};
+
+const RecipeCard = ({ name, mealType, region, match, time, summary, image, featured, onClick, t }: {
+  name: string; mealType: string; region: string; match: number; time: string; summary: string; image: string; featured?: boolean; onClick?: () => void; t: (key: any, vars?: any) => string;
 }) => {
+  const [imgError, setImgError] = useState(false);
+  const showImage = image && !imgError;
+
   return (
     <div
       onClick={onClick}
@@ -20,15 +31,21 @@ const RecipeCard = ({ name, mealType, region, match, time, summary, image, featu
       )}
     >
       <div className="h-44 relative overflow-hidden group">
-        <img src={image} alt={name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+        {showImage ? (
+          <img src={image} alt={name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" onError={() => setImgError(true)} />
+        ) : (
+          <div className={cn("w-full h-full bg-gradient-to-br flex items-center justify-center", MEAL_BG[mealType] || MEAL_BG.Lunch)}>
+            <ChefHat className="h-16 w-16 text-white/40" />
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
         <div className="absolute top-4 left-4 flex gap-2">
           <Badge className="bg-primary/90 text-white border-none rounded-xl px-3 h-8 shadow-lg backdrop-blur-md">
-            {match}% Match
+            {t("recipes.match", { percent: match })}
           </Badge>
           {featured && (
             <Badge className="bg-orange-500 text-white border-none rounded-xl px-3 h-8 shadow-lg">
-              <Sparkles className="h-3 w-3 mr-1 fill-white" />Top Pick
+              <Sparkles className="h-3 w-3 mr-1 fill-white" />{t("recipes.topPick")}
             </Badge>
           )}
         </div>
@@ -53,6 +70,7 @@ const RecipeCard = ({ name, mealType, region, match, time, summary, image, featu
 export default function Recipes() {
   const { token } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const pantryQuery = useQuery({
     queryKey: ["pantry"],
@@ -65,10 +83,10 @@ export default function Recipes() {
   const recipesQuery = useQuery({
     queryKey: ["recipes"],
     queryFn: () => api.recipes(token!),
-    enabled: !!token && !pantryEmpty,
+    enabled: !!token,
   });
 
-  const recipes = (recipesQuery.data ?? []).filter((r) => r.matchPercent >= 70);
+  const recipes = (recipesQuery.data ?? []).filter((r) => r.matchPercent >= 30);
   const [selectedRecipe, setSelectedRecipe] = useState<RecipeSuggestion | null>(null);
   const [isCooking, setIsCooking] = useState(false);
 
@@ -77,18 +95,18 @@ export default function Recipes() {
     setIsCooking(false);
   };
 
-  const isLoading = pantryQuery.isLoading || (recipesQuery.isLoading && !pantryEmpty);
+  const isLoading = pantryQuery.isLoading || recipesQuery.isLoading;
 
   return (
     <div className="flex flex-col gap-8 p-6 pb-24 animate-in slide-in-from-bottom-6 duration-500">
       <div className="flex flex-col gap-2">
-        <h2 className="text-xl font-bold text-foreground">Suggested for You</h2>
-        <p className="text-sm text-muted-foreground">Regional breakfast, lunch, dinner and snacks based on your pantry products.</p>
+        <h2 className="text-xl font-bold text-foreground">{t("recipes.suggestedForYou")}</h2>
+        <p className="text-sm text-muted-foreground">{t("recipes.description")}</p>
       </div>
 
       {isLoading && (
         <div className="flex flex-col gap-6">
-          <p className="text-sm text-muted-foreground">Loading recipes...</p>
+          <p className="text-sm text-muted-foreground">{t("recipes.loading")}</p>
         </div>
       )}
 
@@ -98,14 +116,14 @@ export default function Recipes() {
             <ShoppingCart className="h-10 w-10 text-muted-foreground/40" />
           </div>
           <div className="flex flex-col gap-1">
-            <h3 className="text-lg font-bold text-foreground">Your pantry is empty</h3>
-            <p className="text-sm text-muted-foreground max-w-[260px]">Add products to your pantry first and we'll suggest recipes based on what you have.</p>
+            <h3 className="text-lg font-bold text-foreground">{t("recipes.pantryEmpty")}</h3>
+            <p className="text-sm text-muted-foreground max-w-[260px]">{t("recipes.pantryEmptyHint")}</p>
           </div>
           <button
             onClick={() => navigate("/pantry")}
             className="mt-2 bg-primary text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-lg shadow-primary/20 active:scale-[0.98] transition-all"
           >
-            Go to Pantry
+            {t("recipes.goToPantry")}
           </button>
         </div>
       )}
@@ -115,8 +133,8 @@ export default function Recipes() {
           <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
             <ChefHat className="h-8 w-8 text-muted-foreground/40" />
           </div>
-          <h3 className="font-bold text-foreground">No matching recipes</h3>
-          <p className="text-sm text-muted-foreground max-w-[260px]">No recipes with 70%+ ingredient match. Try adding more items to your pantry.</p>
+          <h3 className="font-bold text-foreground">{t("recipes.noMatchingRecipes")}</h3>
+          <p className="text-sm text-muted-foreground max-w-[260px]">{t("recipes.noMatchingHint")}</p>
         </div>
       )}
 
@@ -129,11 +147,12 @@ export default function Recipes() {
               mealType={recipe.mealType}
               region={recipe.region}
               match={Math.round(recipe.matchPercent)}
-              time={`${10 + idx * 5} min`}
-              summary={recipe.ingredients.slice(0, 3).join(", ") + (recipe.ingredients.length > 3 ? ` +${recipe.ingredients.length - 3} more` : "")}
+              time={t("recipes.minutesSuffix", { count: 10 + idx * 5 })}
+              summary={recipe.ingredients.slice(0, 3).join(", ") + (recipe.ingredients.length > 3 ? ` ${t("recipes.moreIngredients", { count: recipe.ingredients.length - 3 })}` : "")}
               image={recipe.imageUrl}
               featured={idx === 0}
               onClick={() => { setSelectedRecipe(recipe); setIsCooking(false); }}
+              t={t}
             />
           ))}
         </div>
@@ -146,12 +165,18 @@ export default function Recipes() {
               {!isCooking ? (
                 <>
                   <div className="h-64 relative shrink-0">
-                    <img src={selectedRecipe.imageUrl} alt={selectedRecipe.name} className="w-full h-full object-cover" />
+                    {selectedRecipe.imageUrl ? (
+                      <img src={selectedRecipe.imageUrl} alt={selectedRecipe.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className={cn("w-full h-full bg-gradient-to-br flex items-center justify-center", MEAL_BG[selectedRecipe.mealType] || MEAL_BG.Lunch)}>
+                        <ChefHat className="h-20 w-20 text-white/30" />
+                      </div>
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
 
                     <div className="absolute top-4 left-4 flex gap-2">
                       <Badge className="bg-primary/90 text-white border-none rounded-xl px-3 h-8 shadow-lg backdrop-blur-md">
-                        {Math.round(selectedRecipe.matchPercent)}% Match
+                        {t("recipes.match", { percent: Math.round(selectedRecipe.matchPercent) })}
                       </Badge>
                     </div>
 
@@ -170,19 +195,9 @@ export default function Recipes() {
 
                   <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 relative">
                     <div className="flex flex-col gap-3">
-                      <h3 className="text-lg font-bold text-foreground">Why this recipe?</h3>
-                      <div className="p-4 rounded-2xl bg-orange-50 dark:bg-orange-500/10 border border-orange-100 dark:border-orange-500/20 flex gap-3">
-                        <Sparkles className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
-                        <p className="text-sm font-medium leading-relaxed text-orange-900 dark:text-orange-200">
-                          Score {selectedRecipe.finalScore.toFixed(1)} with {Math.round(selectedRecipe.matchPercent)}% ingredient match from your pantry.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-3">
                       <h3 className="text-lg font-bold text-foreground flex items-center justify-between">
-                        Ingredients
-                        <span className="text-xs font-normal text-muted-foreground">{selectedRecipe.ingredients.length} items</span>
+                        {t("recipes.ingredients")}
+                        <span className="text-xs font-normal text-muted-foreground">{t("recipes.itemsCount", { count: selectedRecipe.ingredients.length })}</span>
                       </h3>
                       <ul className="flex flex-col gap-3 text-sm font-medium text-foreground/80">
                         {selectedRecipe.ingredients.map((ing, i) => (
@@ -198,7 +213,7 @@ export default function Recipes() {
                         onClick={() => setIsCooking(true)}
                         className="w-full bg-primary text-white py-4 rounded-2xl font-bold tracking-wide shadow-xl shadow-primary/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                       >
-                        <ChefHat className="h-5 w-5" /> Let's Start Cooking
+                        <ChefHat className="h-5 w-5" /> {t("recipes.letsStartCooking")}
                       </button>
                     </div>
                   </div>
@@ -207,7 +222,7 @@ export default function Recipes() {
                 <div className="flex-1 flex flex-col bg-muted/20 relative overflow-hidden">
                   <div className="bg-card px-6 pt-6 pb-4 shadow-sm z-10 sticky top-0 flex items-center justify-between">
                     <div>
-                      <h2 className="text-lg font-bold text-foreground leading-tight">Cooking Mode</h2>
+                      <h2 className="text-lg font-bold text-foreground leading-tight">{t("recipes.cookingMode")}</h2>
                       <p className="text-xs text-muted-foreground line-clamp-1">{selectedRecipe.name}</p>
                     </div>
                     <button onClick={handleClose} className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-foreground hover:bg-muted/80 transition-colors pointer-events-auto shrink-0 shadow-sm border border-border">
@@ -233,7 +248,7 @@ export default function Recipes() {
                       onClick={handleClose}
                       className="w-full mt-4 mb-2 bg-green-500 text-white py-4 rounded-2xl font-bold tracking-wide shadow-xl shadow-green-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                     >
-                      <Sparkles className="h-5 w-5" /> Meal is Ready!
+                      <Sparkles className="h-5 w-5" /> {t("recipes.mealIsReady")}
                     </button>
                   </div>
                 </div>

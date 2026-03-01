@@ -27,3 +27,4 @@ firebase-service-account.json
 .vscode/
 *.swp
 .github/
+backend.zip

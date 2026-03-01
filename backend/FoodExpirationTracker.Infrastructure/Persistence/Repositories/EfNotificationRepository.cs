@@ -26,9 +26,34 @@ public class EfNotificationRepository : INotificationRepository
     public async Task<List<NotificationLog>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         return await _db.Notifications
+            .Include(n => n.ProductBatch)
+                .ThenInclude(b => b!.Product)
             .Where(n => n.UserId == userId)
             .OrderByDescending(n => n.SentAtUtc)
+            .Take(50)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task DeleteByBatchAndTypeAsync(Guid batchId, string notificationType, CancellationToken cancellationToken = default)
+    {
+        var existing = await _db.Notifications
+            .Where(n => n.ProductBatchId == batchId && n.NotificationType == notificationType)
+            .ToListAsync(cancellationToken);
+        if (existing.Count > 0)
+        {
+            _db.Notifications.RemoveRange(existing);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public async Task DeleteAllByUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var logs = await _db.Notifications.Where(n => n.UserId == userId).ToListAsync(cancellationToken);
+        if (logs.Count > 0)
+        {
+            _db.Notifications.RemoveRange(logs);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
     }
 
     public async Task<int> CountUsedBatchesInMonthAsync(Guid userId, int year, int month, CancellationToken cancellationToken = default)

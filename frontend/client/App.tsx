@@ -15,13 +15,23 @@ import NotFound from "./pages/NotFound";
 import { MobileLayout } from "./components/layout/MobileLayout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
 import { AuthProvider } from "./components/auth/AuthProvider";
 import { RequireAuth } from "./components/auth/RequireAuth";
+import { LanguageProvider } from "./lib/i18n/LanguageContext";
 import ChangePassword from "./pages/ChangePassword";
 import ProfileEdit from "./pages/ProfileEdit";
-import VerifyEmail from "./pages/VerifyEmail";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -30,11 +40,12 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <LanguageProvider>
           <MobileLayout>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              <Route path="/verify-email" element={<VerifyEmail />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
 
               <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
               <Route path="/pantry" element={<RequireAuth><Pantry /></RequireAuth>} />
@@ -49,6 +60,7 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
           </MobileLayout>
+          </LanguageProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

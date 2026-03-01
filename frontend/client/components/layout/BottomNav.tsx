@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { Home, ClipboardList, Scan, Utensils, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 const NavItem = ({ to, icon: Icon, label, active }: { to: string, icon: any, label: string, active: boolean }) => (
   <Link
@@ -18,11 +19,12 @@ const NavItem = ({ to, icon: Icon, label, active }: { to: string, icon: any, lab
 export function BottomNav() {
   const location = useLocation();
   const pathname = location.pathname;
+  const { t } = useTranslation();
 
   return (
     <nav className="z-50 bg-card/95 backdrop-blur-lg border-t border-border flex items-center justify-around px-2 pb-safe-area-inset-bottom h-16 w-full flex-shrink-0 relative">
-      <NavItem to="/" icon={Home} label="Home" active={pathname === "/"} />
-      <NavItem to="/pantry" icon={ClipboardList} label="Pantry" active={pathname === "/pantry"} />
+      <NavItem to="/" icon={Home} label={t("nav.home")} active={pathname === "/"} />
+      <NavItem to="/pantry" icon={ClipboardList} label={t("nav.pantry")} active={pathname === "/pantry"} />
       <div className="relative -top-5 z-50">
         <Link
           to="/scan"
@@ -31,8 +33,8 @@ export function BottomNav() {
           <Scan className="h-7 w-7" />
         </Link>
       </div>
-      <NavItem to="/recipes" icon={Utensils} label="Recipes" active={pathname === "/recipes"} />
-      <NavItem to="/profile" icon={User} label="Profile" active={pathname === "/profile"} />
+      <NavItem to="/recipes" icon={Utensils} label={t("nav.recipes")} active={pathname === "/recipes"} />
+      <NavItem to="/profile" icon={User} label={t("nav.profile")} active={pathname === "/profile"} />
     </nav>
   );
 }
