@@ -86,7 +86,7 @@ export default function Recipes() {
     enabled: !!token,
   });
 
-  const recipes = (recipesQuery.data ?? []).filter((r) => r.matchPercent >= 30);
+  const recipes = (recipesQuery.data ?? []).filter((r) => r.matchPercent >= 50).slice(0, 6);
   const [selectedRecipe, setSelectedRecipe] = useState<RecipeSuggestion | null>(null);
   const [isCooking, setIsCooking] = useState(false);
 

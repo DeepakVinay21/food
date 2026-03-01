@@ -6,7 +6,7 @@ export const hi: Record<TranslationKeys, string> = {
   "nav.pantry": "पैंट्री",
   "nav.recipes": "रेसिपी",
   "nav.profile": "प्रोफ़ाइल",
-  "nav.topTitle.default": "FoodTrack",
+  "nav.topTitle.default": "Pantry AI",
   "nav.topTitle.pantry": "मेरी पैंट्री",
   "nav.topTitle.scanner": "स्कैनर",
   "nav.topTitle.recipes": "रेसिपी",

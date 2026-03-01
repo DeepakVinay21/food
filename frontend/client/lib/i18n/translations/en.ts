@@ -4,7 +4,7 @@ export const en = {
   "nav.pantry": "Pantry",
   "nav.recipes": "Recipes",
   "nav.profile": "Profile",
-  "nav.topTitle.default": "FoodTrack",
+  "nav.topTitle.default": "Pantry AI",
   "nav.topTitle.pantry": "My Pantry",
   "nav.topTitle.scanner": "Scanner",
   "nav.topTitle.recipes": "Recipes",

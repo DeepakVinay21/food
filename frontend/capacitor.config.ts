@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.foodtracker.app",
-  appName: "FoodTracker",
+  appName: "Pantry AI",
   webDir: "dist/spa",
   android: {
     allowMixedContent: true,

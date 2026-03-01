@@ -6,7 +6,7 @@ export const te: Record<TranslationKeys, string> = {
   "nav.pantry": "పేంట్రీ",
   "nav.recipes": "వంటకాలు",
   "nav.profile": "ప్రొఫైల్",
-  "nav.topTitle.default": "FoodTrack",
+  "nav.topTitle.default": "Pantry AI",
   "nav.topTitle.pantry": "నా పేంట్రీ",
   "nav.topTitle.scanner": "స్కానర్",
   "nav.topTitle.recipes": "వంటకాలు",

@@ -137,6 +137,9 @@ export default function Index() {
   const suggestion = recipesQuery.data?.find((r) => r.matchPercent >= 60);
   const expiredCount = allProductBatches.filter((p) => p.status === "expired").length;
 
+  // Count products that have at least one batch (matches what pantry shows)
+  const actualProductCount = (productsQuery.data?.items ?? []).filter((p) => p.batches.length > 0).length;
+
   return (
     <div className="flex flex-col gap-6 pb-24 animate-in fade-in duration-500">
       <div className="px-6 pt-6 flex flex-col gap-1">
@@ -145,7 +148,7 @@ export default function Index() {
       </div>
 
       <div className="px-6 grid grid-cols-3 gap-3">
-        <SummaryCard title={t("dashboard.totalItems")} count={dashboardQuery.data?.totalProducts ?? 0} color="text-primary" bg="bg-primary/10" />
+        <SummaryCard title={t("dashboard.totalItems")} count={actualProductCount} color="text-primary" bg="bg-primary/10" />
         <SummaryCard title={t("dashboard.expiringSoon")} count={dashboardQuery.data?.expiringSoonCount ?? 0} color="text-orange-600 dark:text-orange-400" bg="bg-orange-50 dark:bg-orange-500/10" />
         <SummaryCard title={t("dashboard.expired")} count={expiredCount} color="text-red-600 dark:text-red-400" bg="bg-red-50 dark:bg-red-500/10" />
       </div>

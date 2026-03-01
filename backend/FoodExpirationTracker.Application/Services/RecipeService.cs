@@ -61,9 +61,9 @@ public class RecipeService
         var prompt = $$"""
             You are a recipe suggestion engine. The user has these items in their pantry: {{itemsList}}{{expirySection}}
 
-            Generate 10-12 diverse recipes that can be made using these available ingredients.
+            Generate 5-6 diverse recipes that can be made using these available ingredients.
             Assume the user has common staples like salt, pepper, oil, water, and basic spices.
-            Include a good mix of meal types: 2-3 Breakfast, 3-4 Lunch, 3-4 Dinner, 1-2 Snacks.
+            Include a good mix of meal types: 1-2 Breakfast, 1-2 Lunch, 1-2 Dinner, 1 Snacks.
             Prioritize recipes that use items expiring soon.
             Include a variety of cuisines and difficulty levels.
 
@@ -193,7 +193,7 @@ public class RecipeService
             if (diversified.All(d => d.RecipeId != item.RecipeId))
                 diversified.Add(item);
         }
-        return diversified;
+        return diversified.Take(6).ToList();
     }
 
     // ── Synonyms & token expansion ──
