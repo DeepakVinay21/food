@@ -17,6 +17,8 @@ services:
         generateValue: true
       - key: PORT
         value: "10000"
+      - key: RESEND_API_KEY
+        sync: false
       - key: SMTP_SENDER_EMAIL
         sync: false
       - key: SMTP_APP_PASSWORD

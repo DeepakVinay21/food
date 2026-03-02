@@ -1,5 +1,8 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Mail;
+using System.Text;
+using System.Text.Json;
 using FoodExpirationTracker.Application.Abstractions;
 using Microsoft.Extensions.Logging;
 
@@ -9,48 +12,50 @@ public class SmtpEmailService : IEmailService
 {
     private readonly ILogger<SmtpEmailService> _logger;
     private readonly string _senderEmail;
-    private readonly string _appPassword;
+    private readonly string? _resendApiKey;
+    private readonly string? _smtpAppPassword;
     private readonly string _smtpHost;
     private readonly int _smtpPort;
+    private readonly bool _useResend;
+    private static readonly HttpClient HttpClient = new();
 
     public SmtpEmailService(ILogger<SmtpEmailService> logger)
     {
         _logger = logger;
-        _senderEmail = Environment.GetEnvironmentVariable("SMTP_SENDER_EMAIL") ?? "";
-        _appPassword = Environment.GetEnvironmentVariable("SMTP_APP_PASSWORD") ?? "";
+        _resendApiKey = Environment.GetEnvironmentVariable("RESEND_API_KEY");
+        _senderEmail = Environment.GetEnvironmentVariable("SMTP_SENDER_EMAIL") ?? "onboarding@resend.dev";
+        _smtpAppPassword = Environment.GetEnvironmentVariable("SMTP_APP_PASSWORD");
         _smtpHost = Environment.GetEnvironmentVariable("SMTP_HOST") ?? "smtp.gmail.com";
         _smtpPort = int.TryParse(Environment.GetEnvironmentVariable("SMTP_PORT"), out var port) ? port : 587;
 
-        if (string.IsNullOrEmpty(_senderEmail))
-            _logger.LogWarning("SMTP_SENDER_EMAIL not set. Email sending will fail at runtime.");
-        if (string.IsNullOrEmpty(_appPassword))
-            _logger.LogWarning("SMTP_APP_PASSWORD not set. Email sending will fail at runtime.");
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SMTP_HOST")))
-            _logger.LogWarning("SMTP_HOST not set. Defaulting to smtp.gmail.com.");
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SMTP_PORT")))
-            _logger.LogWarning("SMTP_PORT not set. Defaulting to 587.");
+        _useResend = !string.IsNullOrEmpty(_resendApiKey);
+
+        if (_useResend)
+        {
+            _logger.LogInformation("Using Resend HTTP API for email delivery.");
+        }
+        else if (!string.IsNullOrEmpty(_smtpAppPassword))
+        {
+            _logger.LogInformation("Using SMTP ({Host}:{Port}) for email delivery.", _smtpHost, _smtpPort);
+        }
+        else
+        {
+            _logger.LogWarning("No email provider configured. Set RESEND_API_KEY or SMTP_APP_PASSWORD.");
+        }
     }
 
     public async Task SendVerificationEmailAsync(string toEmail, string code)
     {
+        var subject = $"Your verification code: {code}";
+        var body = BuildHtmlBody(code);
+
         try
         {
-            using var client = new SmtpClient(_smtpHost, _smtpPort)
-            {
-                Credentials = new NetworkCredential(_senderEmail, _appPassword),
-                EnableSsl = true,
-            };
+            if (_useResend)
+                await SendViaResendAsync(toEmail, subject, body);
+            else
+                await SendViaSmtpAsync(toEmail, subject, body);
 
-            var message = new MailMessage
-            {
-                From = new MailAddress(_senderEmail, "FoodTracker"),
-                Subject = $"Your verification code: {code}",
-                IsBodyHtml = true,
-                Body = BuildHtmlBody(code),
-            };
-            message.To.Add(toEmail);
-
-            await client.SendMailAsync(message);
             _logger.LogInformation("Verification email sent to {Email}", toEmail);
         }
         catch (Exception ex)
@@ -62,25 +67,17 @@ public class SmtpEmailService : IEmailService
 
     public async Task SendExpiryAlertEmailAsync(string toEmail, string productName, int daysUntilExpiry)
     {
+        var urgency = daysUntilExpiry <= 0 ? "has expired" : daysUntilExpiry == 1 ? "expires tomorrow" : $"expires in {daysUntilExpiry} days";
+        var subject = $"Expiry Alert: {productName} {urgency}!";
+        var body = BuildExpiryHtmlBody(productName, daysUntilExpiry, urgency);
+
         try
         {
-            using var client = new SmtpClient(_smtpHost, _smtpPort)
-            {
-                Credentials = new NetworkCredential(_senderEmail, _appPassword),
-                EnableSsl = true,
-            };
+            if (_useResend)
+                await SendViaResendAsync(toEmail, subject, body);
+            else
+                await SendViaSmtpAsync(toEmail, subject, body);
 
-            var urgency = daysUntilExpiry <= 0 ? "has expired" : daysUntilExpiry == 1 ? "expires tomorrow" : $"expires in {daysUntilExpiry} days";
-            var message = new MailMessage
-            {
-                From = new MailAddress(_senderEmail, "FoodTracker"),
-                Subject = $"Expiry Alert: {productName} {urgency}!",
-                IsBodyHtml = true,
-                Body = BuildExpiryHtmlBody(productName, daysUntilExpiry, urgency),
-            };
-            message.To.Add(toEmail);
-
-            await client.SendMailAsync(message);
             _logger.LogInformation("Expiry alert email sent to {Email} for {Product}", toEmail, productName);
         }
         catch (Exception ex)
@@ -90,11 +87,55 @@ public class SmtpEmailService : IEmailService
         }
     }
 
+    private async Task SendViaResendAsync(string toEmail, string subject, string htmlBody)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            from = $"Pantry AI <{_senderEmail}>",
+            to = new[] { toEmail },
+            subject,
+            html = htmlBody,
+        });
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _resendApiKey);
+
+        var response = await HttpClient.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException($"Resend API error ({response.StatusCode}): {error}");
+        }
+    }
+
+    private async Task SendViaSmtpAsync(string toEmail, string subject, string htmlBody)
+    {
+        using var client = new SmtpClient(_smtpHost, _smtpPort)
+        {
+            Credentials = new NetworkCredential(_senderEmail, _smtpAppPassword),
+            EnableSsl = true,
+        };
+
+        var message = new MailMessage
+        {
+            From = new MailAddress(_senderEmail, "Pantry AI"),
+            Subject = subject,
+            IsBodyHtml = true,
+            Body = htmlBody,
+        };
+        message.To.Add(toEmail);
+
+        await client.SendMailAsync(message);
+    }
+
     private static string BuildHtmlBody(string code)
     {
         return $"""
             <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #f8fafc; border-radius: 16px;">
-                <h2 style="color: #1e293b; margin-bottom: 8px;">FoodTracker</h2>
+                <h2 style="color: #1e293b; margin-bottom: 8px;">Pantry AI</h2>
                 <p style="color: #475569; font-size: 15px;">Your email verification code is:</p>
                 <div style="background: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
                     <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #0f172a;">{code}</span>
@@ -110,13 +151,13 @@ public class SmtpEmailService : IEmailService
         var emoji = daysUntilExpiry <= 0 ? "&#x1F6A8;" : daysUntilExpiry <= 1 ? "&#x26A0;&#xFE0F;" : "&#x23F0;";
         return $"""
             <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #f8fafc; border-radius: 16px;">
-                <h2 style="color: #1e293b; margin-bottom: 8px;">FoodTracker {emoji}</h2>
+                <h2 style="color: #1e293b; margin-bottom: 8px;">Pantry AI {emoji}</h2>
                 <p style="color: #475569; font-size: 15px;">Expiry alert for an item in your pantry:</p>
                 <div style="background: #ffffff; border: 2px solid {color}33; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
                     <p style="font-size: 24px; font-weight: bold; color: #0f172a; margin: 0 0 8px 0;">{productName}</p>
                     <p style="font-size: 16px; color: {color}; font-weight: 600; margin: 0;">{urgency}</p>
                 </div>
-                <p style="color: #64748b; font-size: 13px;">Open FoodTracker to use it before it goes to waste!</p>
+                <p style="color: #64748b; font-size: 13px;">Open Pantry AI to use it before it goes to waste!</p>
             </div>
             """;
     }
