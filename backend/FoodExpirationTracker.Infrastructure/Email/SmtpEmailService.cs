@@ -1,8 +1,5 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Mail;
-using System.Text;
-using System.Text.Json;
 using FoodExpirationTracker.Application.Abstractions;
 using Microsoft.Extensions.Logging;
 
@@ -12,54 +9,54 @@ public class SmtpEmailService : IEmailService
 {
     private readonly ILogger<SmtpEmailService> _logger;
     private readonly string _senderEmail;
-    private readonly string? _brevoApiKey;
-    private readonly string? _resendApiKey;
-    private readonly string? _smtpAppPassword;
+    private readonly string _appPassword;
     private readonly string _smtpHost;
     private readonly int _smtpPort;
-    private readonly string _emailProvider; // "brevo", "resend", or "smtp"
-    private static readonly HttpClient HttpClient = new();
 
     public SmtpEmailService(ILogger<SmtpEmailService> logger)
     {
         _logger = logger;
-        _brevoApiKey = Environment.GetEnvironmentVariable("BREVO_API_KEY");
-        _resendApiKey = Environment.GetEnvironmentVariable("RESEND_API_KEY");
         _senderEmail = Environment.GetEnvironmentVariable("SMTP_SENDER_EMAIL") ?? "";
-        _smtpAppPassword = Environment.GetEnvironmentVariable("SMTP_APP_PASSWORD");
+        _appPassword = Environment.GetEnvironmentVariable("SMTP_APP_PASSWORD") ?? "";
         _smtpHost = Environment.GetEnvironmentVariable("SMTP_HOST") ?? "smtp.gmail.com";
         _smtpPort = int.TryParse(Environment.GetEnvironmentVariable("SMTP_PORT"), out var port) ? port : 587;
 
-        if (!string.IsNullOrEmpty(_brevoApiKey))
-        {
-            _emailProvider = "brevo";
-            _logger.LogInformation("Using Brevo HTTP API for email delivery.");
-        }
-        else if (!string.IsNullOrEmpty(_resendApiKey))
-        {
-            _emailProvider = "resend";
-            _logger.LogInformation("Using Resend HTTP API for email delivery.");
-        }
-        else if (!string.IsNullOrEmpty(_smtpAppPassword))
-        {
-            _emailProvider = "smtp";
-            _logger.LogInformation("Using SMTP ({Host}:{Port}) for email delivery.", _smtpHost, _smtpPort);
-        }
-        else
-        {
-            _emailProvider = "smtp";
-            _logger.LogWarning("No email provider configured. Set BREVO_API_KEY, RESEND_API_KEY, or SMTP_APP_PASSWORD.");
-        }
+        if (string.IsNullOrEmpty(_senderEmail))
+            _logger.LogWarning("SMTP_SENDER_EMAIL not set. Email sending will fail at runtime.");
+        if (string.IsNullOrEmpty(_appPassword))
+            _logger.LogWarning("SMTP_APP_PASSWORD not set. Email sending will fail at runtime.");
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SMTP_HOST")))
+            _logger.LogWarning("SMTP_HOST not set. Defaulting to smtp.gmail.com.");
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SMTP_PORT")))
+            _logger.LogWarning("SMTP_PORT not set. Defaulting to 587.");
     }
 
     public async Task SendVerificationEmailAsync(string toEmail, string code)
     {
-        var subject = $"Your verification code: {code}";
-        var body = BuildHtmlBody(code);
+        if (string.IsNullOrEmpty(_senderEmail) || string.IsNullOrEmpty(_appPassword))
+        {
+            _logger.LogError("SMTP credentials not configured. Cannot send email to {Email}", toEmail);
+            throw new InvalidOperationException("Email service is not configured. Please set SMTP_SENDER_EMAIL and SMTP_APP_PASSWORD.");
+        }
 
         try
         {
-            await SendEmailAsync(toEmail, subject, body);
+            using var client = new SmtpClient(_smtpHost, _smtpPort)
+            {
+                Credentials = new NetworkCredential(_senderEmail, _appPassword),
+                EnableSsl = true,
+            };
+
+            var message = new MailMessage
+            {
+                From = new MailAddress(_senderEmail, "Pantry AI"),
+                Subject = $"Your verification code: {code}",
+                IsBodyHtml = true,
+                Body = BuildHtmlBody(code),
+            };
+            message.To.Add(toEmail);
+
+            await client.SendMailAsync(message);
             _logger.LogInformation("Verification email sent to {Email}", toEmail);
         }
         catch (Exception ex)
@@ -71,13 +68,31 @@ public class SmtpEmailService : IEmailService
 
     public async Task SendExpiryAlertEmailAsync(string toEmail, string productName, int daysUntilExpiry)
     {
-        var urgency = daysUntilExpiry <= 0 ? "has expired" : daysUntilExpiry == 1 ? "expires tomorrow" : $"expires in {daysUntilExpiry} days";
-        var subject = $"Expiry Alert: {productName} {urgency}!";
-        var body = BuildExpiryHtmlBody(productName, daysUntilExpiry, urgency);
+        if (string.IsNullOrEmpty(_senderEmail) || string.IsNullOrEmpty(_appPassword))
+        {
+            _logger.LogError("SMTP credentials not configured. Cannot send expiry alert to {Email}", toEmail);
+            throw new InvalidOperationException("Email service is not configured.");
+        }
 
         try
         {
-            await SendEmailAsync(toEmail, subject, body);
+            using var client = new SmtpClient(_smtpHost, _smtpPort)
+            {
+                Credentials = new NetworkCredential(_senderEmail, _appPassword),
+                EnableSsl = true,
+            };
+
+            var urgency = daysUntilExpiry <= 0 ? "has expired" : daysUntilExpiry == 1 ? "expires tomorrow" : $"expires in {daysUntilExpiry} days";
+            var message = new MailMessage
+            {
+                From = new MailAddress(_senderEmail, "Pantry AI"),
+                Subject = $"Expiry Alert: {productName} {urgency}!",
+                IsBodyHtml = true,
+                Body = BuildExpiryHtmlBody(productName, daysUntilExpiry, urgency),
+            };
+            message.To.Add(toEmail);
+
+            await client.SendMailAsync(message);
             _logger.LogInformation("Expiry alert email sent to {Email} for {Product}", toEmail, productName);
         }
         catch (Exception ex)
@@ -85,81 +100,6 @@ public class SmtpEmailService : IEmailService
             _logger.LogError(ex, "Failed to send expiry alert email to {Email}", toEmail);
             throw;
         }
-    }
-
-    private Task SendEmailAsync(string toEmail, string subject, string htmlBody) => _emailProvider switch
-    {
-        "brevo" => SendViaBrevoAsync(toEmail, subject, htmlBody),
-        "resend" => SendViaResendAsync(toEmail, subject, htmlBody),
-        _ => SendViaSmtpAsync(toEmail, subject, htmlBody),
-    };
-
-    private async Task SendViaBrevoAsync(string toEmail, string subject, string htmlBody)
-    {
-        var payload = JsonSerializer.Serialize(new
-        {
-            sender = new { name = "Pantry AI", email = _senderEmail },
-            to = new[] { new { email = toEmail } },
-            subject,
-            htmlContent = htmlBody,
-        });
-
-        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.brevo.com/v3/smtp/email")
-        {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
-        };
-        request.Headers.Add("api-key", _brevoApiKey);
-
-        var response = await HttpClient.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
-        {
-            var error = await response.Content.ReadAsStringAsync();
-            throw new InvalidOperationException($"Brevo API error ({response.StatusCode}): {error}");
-        }
-    }
-
-    private async Task SendViaResendAsync(string toEmail, string subject, string htmlBody)
-    {
-        var payload = JsonSerializer.Serialize(new
-        {
-            from = $"Pantry AI <{_senderEmail}>",
-            to = new[] { toEmail },
-            subject,
-            html = htmlBody,
-        });
-
-        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails")
-        {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _resendApiKey);
-
-        var response = await HttpClient.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
-        {
-            var error = await response.Content.ReadAsStringAsync();
-            throw new InvalidOperationException($"Resend API error ({response.StatusCode}): {error}");
-        }
-    }
-
-    private async Task SendViaSmtpAsync(string toEmail, string subject, string htmlBody)
-    {
-        using var client = new SmtpClient(_smtpHost, _smtpPort)
-        {
-            Credentials = new NetworkCredential(_senderEmail, _smtpAppPassword),
-            EnableSsl = true,
-        };
-
-        var message = new MailMessage
-        {
-            From = new MailAddress(_senderEmail, "Pantry AI"),
-            Subject = subject,
-            IsBodyHtml = true,
-            Body = htmlBody,
-        };
-        message.To.Add(toEmail);
-
-        await client.SendMailAsync(message);
     }
 
     private static string BuildHtmlBody(string code)
