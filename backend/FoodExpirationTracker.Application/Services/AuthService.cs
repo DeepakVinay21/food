@@ -66,7 +66,17 @@ public class AuthService
         };
 
         await _verificationRepository.AddAsync(verification, cancellationToken);
-        await _emailService.SendVerificationEmailAsync(email, code);
+
+        try
+        {
+            await _emailService.SendVerificationEmailAsync(email, code);
+        }
+        catch (Exception)
+        {
+            // Clean up the verification record if email fails
+            await _verificationRepository.DeleteAsync(verification, cancellationToken);
+            throw new InvalidOperationException("Failed to send verification email. Please try again later.");
+        }
 
         return new MessageResponse("Verification code sent to your email.");
     }
@@ -134,7 +144,15 @@ public class AuthService
         verification.LastSentAt = DateTime.UtcNow;
 
         await _verificationRepository.UpdateAsync(verification, cancellationToken);
-        await _emailService.SendVerificationEmailAsync(email, code);
+
+        try
+        {
+            await _emailService.SendVerificationEmailAsync(email, code);
+        }
+        catch (Exception)
+        {
+            throw new InvalidOperationException("Failed to send verification email. Please try again later.");
+        }
 
         return new MessageResponse("New verification code sent to your email.");
     }
@@ -230,7 +248,16 @@ public class AuthService
         };
 
         await _verificationRepository.AddAsync(verification, cancellationToken);
-        await _emailService.SendVerificationEmailAsync(email, code);
+
+        try
+        {
+            await _emailService.SendVerificationEmailAsync(email, code);
+        }
+        catch (Exception)
+        {
+            await _verificationRepository.DeleteAsync(verification, cancellationToken);
+            throw new InvalidOperationException("Failed to send reset email. Please try again later.");
+        }
 
         return new MessageResponse("If that email is registered, a reset code has been sent.");
     }
@@ -261,7 +288,15 @@ public class AuthService
         verification.LastSentAt = DateTime.UtcNow;
 
         await _verificationRepository.UpdateAsync(verification, cancellationToken);
-        await _emailService.SendVerificationEmailAsync(email, code);
+
+        try
+        {
+            await _emailService.SendVerificationEmailAsync(email, code);
+        }
+        catch (Exception)
+        {
+            throw new InvalidOperationException("Failed to send reset email. Please try again later.");
+        }
 
         return new MessageResponse("New reset code sent to your email.");
     }
