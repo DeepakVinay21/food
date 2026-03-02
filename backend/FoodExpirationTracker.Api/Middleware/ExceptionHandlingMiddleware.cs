@@ -41,11 +41,18 @@ public class ExceptionHandlingMiddleware
             _logger.LogWarning("Not found: {Path} - {Message}", context.Request.Path, ex.Message);
             await WriteError(context, HttpStatusCode.NotFound, ex.Message);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogInformation("Request cancelled: {Path}", context.Request.Path);
+            context.Response.StatusCode = 499; // Client Closed Request
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception: {Path}", context.Request.Path);
             TrackError();
-            await WriteError(context, HttpStatusCode.InternalServerError, "An unexpected error occurred.");
+            // Include error details to help diagnose issues
+            var message = $"An unexpected error occurred: {ex.GetType().Name}: {ex.Message}";
+            await WriteError(context, HttpStatusCode.InternalServerError, message);
         }
     }
 
