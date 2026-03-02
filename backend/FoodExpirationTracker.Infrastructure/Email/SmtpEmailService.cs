@@ -12,35 +12,43 @@ public class SmtpEmailService : IEmailService
 {
     private readonly ILogger<SmtpEmailService> _logger;
     private readonly string _senderEmail;
+    private readonly string? _brevoApiKey;
     private readonly string? _resendApiKey;
     private readonly string? _smtpAppPassword;
     private readonly string _smtpHost;
     private readonly int _smtpPort;
-    private readonly bool _useResend;
+    private readonly string _emailProvider; // "brevo", "resend", or "smtp"
     private static readonly HttpClient HttpClient = new();
 
     public SmtpEmailService(ILogger<SmtpEmailService> logger)
     {
         _logger = logger;
+        _brevoApiKey = Environment.GetEnvironmentVariable("BREVO_API_KEY");
         _resendApiKey = Environment.GetEnvironmentVariable("RESEND_API_KEY");
-        _senderEmail = Environment.GetEnvironmentVariable("SMTP_SENDER_EMAIL") ?? "onboarding@resend.dev";
+        _senderEmail = Environment.GetEnvironmentVariable("SMTP_SENDER_EMAIL") ?? "";
         _smtpAppPassword = Environment.GetEnvironmentVariable("SMTP_APP_PASSWORD");
         _smtpHost = Environment.GetEnvironmentVariable("SMTP_HOST") ?? "smtp.gmail.com";
         _smtpPort = int.TryParse(Environment.GetEnvironmentVariable("SMTP_PORT"), out var port) ? port : 587;
 
-        _useResend = !string.IsNullOrEmpty(_resendApiKey);
-
-        if (_useResend)
+        if (!string.IsNullOrEmpty(_brevoApiKey))
         {
+            _emailProvider = "brevo";
+            _logger.LogInformation("Using Brevo HTTP API for email delivery.");
+        }
+        else if (!string.IsNullOrEmpty(_resendApiKey))
+        {
+            _emailProvider = "resend";
             _logger.LogInformation("Using Resend HTTP API for email delivery.");
         }
         else if (!string.IsNullOrEmpty(_smtpAppPassword))
         {
+            _emailProvider = "smtp";
             _logger.LogInformation("Using SMTP ({Host}:{Port}) for email delivery.", _smtpHost, _smtpPort);
         }
         else
         {
-            _logger.LogWarning("No email provider configured. Set RESEND_API_KEY or SMTP_APP_PASSWORD.");
+            _emailProvider = "smtp";
+            _logger.LogWarning("No email provider configured. Set BREVO_API_KEY, RESEND_API_KEY, or SMTP_APP_PASSWORD.");
         }
     }
 
@@ -51,11 +59,7 @@ public class SmtpEmailService : IEmailService
 
         try
         {
-            if (_useResend)
-                await SendViaResendAsync(toEmail, subject, body);
-            else
-                await SendViaSmtpAsync(toEmail, subject, body);
-
+            await SendEmailAsync(toEmail, subject, body);
             _logger.LogInformation("Verification email sent to {Email}", toEmail);
         }
         catch (Exception ex)
@@ -73,17 +77,44 @@ public class SmtpEmailService : IEmailService
 
         try
         {
-            if (_useResend)
-                await SendViaResendAsync(toEmail, subject, body);
-            else
-                await SendViaSmtpAsync(toEmail, subject, body);
-
+            await SendEmailAsync(toEmail, subject, body);
             _logger.LogInformation("Expiry alert email sent to {Email} for {Product}", toEmail, productName);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send expiry alert email to {Email}", toEmail);
             throw;
+        }
+    }
+
+    private Task SendEmailAsync(string toEmail, string subject, string htmlBody) => _emailProvider switch
+    {
+        "brevo" => SendViaBrevoAsync(toEmail, subject, htmlBody),
+        "resend" => SendViaResendAsync(toEmail, subject, htmlBody),
+        _ => SendViaSmtpAsync(toEmail, subject, htmlBody),
+    };
+
+    private async Task SendViaBrevoAsync(string toEmail, string subject, string htmlBody)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            sender = new { name = "Pantry AI", email = _senderEmail },
+            to = new[] { new { email = toEmail } },
+            subject,
+            htmlContent = htmlBody,
+        });
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.brevo.com/v3/smtp/email")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("api-key", _brevoApiKey);
+
+        var response = await HttpClient.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException($"Brevo API error ({response.StatusCode}): {error}");
         }
     }
 

@@ -32,6 +32,7 @@ services:
       JWT_SECRET: "FreshTrack-Local-Dev-Secret-Key-32chars!"
       PORT: "5001"
       ASPNETCORE_ENVIRONMENT: "Production"
+      BREVO_API_KEY: "${BREVO_API_KEY:-}"
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       SMTP_SENDER_EMAIL: "${SMTP_SENDER_EMAIL:-}"
       SMTP_APP_PASSWORD: "${SMTP_APP_PASSWORD:-}"
