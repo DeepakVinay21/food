@@ -235,6 +235,37 @@ public class AuthService
         return new MessageResponse("If that email is registered, a reset code has been sent.");
     }
 
+    public async Task<MessageResponse> ResendForgotPasswordAsync(ResendRequest request, CancellationToken cancellationToken = default)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+
+        var verification = await _verificationRepository.GetByEmailAsync(email, cancellationToken)
+            ?? throw new InvalidOperationException("No pending password reset found for this email.");
+
+        if (verification.PasswordHash != PasswordResetSentinel)
+        {
+            throw new InvalidOperationException("No pending password reset found for this email.");
+        }
+
+        var secondsSinceLastSend = (DateTime.UtcNow - verification.LastSentAt).TotalSeconds;
+        if (secondsSinceLastSend < 60)
+        {
+            var wait = (int)Math.Ceiling(60 - secondsSinceLastSend);
+            throw new InvalidOperationException($"Please wait {wait} seconds before requesting a new code.");
+        }
+
+        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+        verification.Code = code;
+        verification.AttemptCount = 0;
+        verification.ExpiryTime = DateTime.UtcNow.AddMinutes(5);
+        verification.LastSentAt = DateTime.UtcNow;
+
+        await _verificationRepository.UpdateAsync(verification, cancellationToken);
+        await _emailService.SendVerificationEmailAsync(email, code);
+
+        return new MessageResponse("New reset code sent to your email.");
+    }
+
     public async Task<MessageResponse> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
     {
         if (request.NewPassword != request.ConfirmNewPassword)

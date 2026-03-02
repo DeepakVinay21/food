@@ -73,7 +73,7 @@ export default function ForgotPassword() {
     setError("");
     setLoading(true);
     try {
-      await api.forgotPassword(email);
+      await api.resendForgotPassword(email);
       setCountdown(60);
       setOtpCode("");
     } catch (err) {

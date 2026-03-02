@@ -10,24 +10,32 @@ public class SmtpEmailService : IEmailService
     private readonly ILogger<SmtpEmailService> _logger;
     private readonly string _senderEmail;
     private readonly string _appPassword;
+    private readonly string _smtpHost;
+    private readonly int _smtpPort;
 
     public SmtpEmailService(ILogger<SmtpEmailService> logger)
     {
         _logger = logger;
         _senderEmail = Environment.GetEnvironmentVariable("SMTP_SENDER_EMAIL") ?? "";
         _appPassword = Environment.GetEnvironmentVariable("SMTP_APP_PASSWORD") ?? "";
+        _smtpHost = Environment.GetEnvironmentVariable("SMTP_HOST") ?? "smtp.gmail.com";
+        _smtpPort = int.TryParse(Environment.GetEnvironmentVariable("SMTP_PORT"), out var port) ? port : 587;
 
-        if (string.IsNullOrEmpty(_senderEmail) || string.IsNullOrEmpty(_appPassword))
-        {
-            _logger.LogWarning("SMTP_SENDER_EMAIL or SMTP_APP_PASSWORD not set. Email sending will fail at runtime.");
-        }
+        if (string.IsNullOrEmpty(_senderEmail))
+            _logger.LogWarning("SMTP_SENDER_EMAIL not set. Email sending will fail at runtime.");
+        if (string.IsNullOrEmpty(_appPassword))
+            _logger.LogWarning("SMTP_APP_PASSWORD not set. Email sending will fail at runtime.");
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SMTP_HOST")))
+            _logger.LogWarning("SMTP_HOST not set. Defaulting to smtp.gmail.com.");
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SMTP_PORT")))
+            _logger.LogWarning("SMTP_PORT not set. Defaulting to 587.");
     }
 
     public async Task SendVerificationEmailAsync(string toEmail, string code)
     {
         try
         {
-            using var client = new SmtpClient("smtp.gmail.com", 587)
+            using var client = new SmtpClient(_smtpHost, _smtpPort)
             {
                 Credentials = new NetworkCredential(_senderEmail, _appPassword),
                 EnableSsl = true,
@@ -56,7 +64,7 @@ public class SmtpEmailService : IEmailService
     {
         try
         {
-            using var client = new SmtpClient("smtp.gmail.com", 587)
+            using var client = new SmtpClient(_smtpHost, _smtpPort)
             {
                 Credentials = new NetworkCredential(_senderEmail, _appPassword),
                 EnableSsl = true,
@@ -78,6 +86,7 @@ public class SmtpEmailService : IEmailService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send expiry alert email to {Email}", toEmail);
+            throw;
         }
     }
 

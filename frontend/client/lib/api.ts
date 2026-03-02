@@ -207,6 +207,12 @@ export const api = {
       body: JSON.stringify({ email }),
     }),
 
+  resendForgotPassword: (email: string) =>
+    request<SendVerificationResponse>("/api/v1/auth/resend-forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
   resetPassword: (email: string, code: string, newPassword: string, confirmNewPassword: string) =>
     request<{ message: string }>("/api/v1/auth/reset-password", {
       method: "POST",
