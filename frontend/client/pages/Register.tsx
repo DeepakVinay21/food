@@ -1,40 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { Mail, ArrowLeft, ShieldCheck } from "lucide-react";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
 
-type Step = "form" | "otp";
-
 export default function Register() {
-  const [step, setStep] = useState<Step>("form");
-
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  const [otpCode, setOtpCode] = useState("");
-
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [countdown, setCountdown] = useState(0);
 
   const auth = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
 
-  useEffect(() => {
-    if (countdown <= 0) return;
-    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [countdown]);
-
-  const handleSendVerification = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -45,120 +30,24 @@ export default function Register() {
 
     setLoading(true);
     try {
-      await auth.sendVerification({
+      await auth.register({
         email,
         password,
         confirmPassword,
         firstName,
         lastName,
       });
-      setStep("otp");
-      setCountdown(60);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("register.failedToSendCode"));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyAndRegister = async () => {
-    if (otpCode.length !== 6) return;
-    setError("");
-    setLoading(true);
-    try {
-      await auth.verifyAndRegister(email, otpCode);
       navigate("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("register.verificationFailed"));
-      setOtpCode("");
+      setError(err instanceof Error ? err.message : t("register.registrationFailed"));
     } finally {
       setLoading(false);
     }
   };
-
-  const handleResend = async () => {
-    setError("");
-    setLoading(true);
-    try {
-      await auth.sendVerification({
-        email,
-        password,
-        confirmPassword,
-        firstName,
-        lastName,
-      });
-      setCountdown(60);
-      setOtpCode("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("register.failedToResendCode"));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (step === "otp") {
-    return (
-      <div className="h-full flex items-center justify-center p-6">
-        <div className="w-full max-w-sm bg-card rounded-[2rem] border border-border p-6 flex flex-col gap-5 shadow-lg items-center animate-in fade-in zoom-in-95 duration-300">
-          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-            <Mail className="h-8 w-8 text-primary" />
-          </div>
-
-          <div className="text-center">
-            <h2 className="text-2xl font-bold text-foreground">{t("register.verifyEmail")}</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {t("register.weSentCode")}
-            </p>
-            <p className="text-sm font-semibold text-foreground">{email}</p>
-          </div>
-
-          <InputOTP maxLength={6} value={otpCode} onChange={setOtpCode}>
-            <InputOTPGroup className="gap-2">
-              <InputOTPSlot index={0} className="w-12 h-14 text-lg font-bold rounded-xl border-border" />
-              <InputOTPSlot index={1} className="w-12 h-14 text-lg font-bold rounded-xl border-border" />
-              <InputOTPSlot index={2} className="w-12 h-14 text-lg font-bold rounded-xl border-border" />
-              <InputOTPSlot index={3} className="w-12 h-14 text-lg font-bold rounded-xl border-border" />
-              <InputOTPSlot index={4} className="w-12 h-14 text-lg font-bold rounded-xl border-border" />
-              <InputOTPSlot index={5} className="w-12 h-14 text-lg font-bold rounded-xl border-border" />
-            </InputOTPGroup>
-          </InputOTP>
-
-          {error && <p className="text-xs text-red-500 font-medium text-center">{error}</p>}
-
-          <Button
-            className="rounded-xl h-11 font-bold w-full"
-            disabled={loading || otpCode.length !== 6}
-            onClick={handleVerifyAndRegister}
-          >
-            <ShieldCheck className="h-4 w-4 mr-2" />
-            {loading ? t("register.verifying") : t("register.verifyAndCreate")}
-          </Button>
-
-          <div className="flex flex-col items-center gap-2">
-            <button
-              type="button"
-              className="text-sm text-primary font-semibold disabled:text-muted-foreground disabled:cursor-not-allowed"
-              disabled={countdown > 0 || loading}
-              onClick={handleResend}
-            >
-              {countdown > 0 ? t("register.resendCodeIn", { seconds: countdown }) : t("register.resendCode")}
-            </button>
-            <button
-              type="button"
-              className="text-sm text-muted-foreground flex items-center gap-1"
-              onClick={() => { setStep("form"); setOtpCode(""); setError(""); }}
-            >
-              <ArrowLeft className="h-3 w-3" /> {t("register.backToForm")}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="h-full flex items-center justify-center p-6">
-      <form onSubmit={handleSendVerification} className="w-full max-w-sm bg-card rounded-[2rem] border border-border p-6 flex flex-col gap-3 shadow-lg">
+      <form onSubmit={handleRegister} className="w-full max-w-sm bg-card rounded-[2rem] border border-border p-6 flex flex-col gap-3 shadow-lg">
         <h2 className="text-2xl font-bold text-foreground">{t("register.createAccount")}</h2>
         <p className="text-sm text-muted-foreground -mt-2">{t("register.signUpSubtitle")}</p>
         <Input placeholder={t("register.firstNamePlaceholder")} value={firstName} onChange={(e) => setFirstName(e.target.value)} required className="rounded-xl h-11" />
@@ -168,7 +57,7 @@ export default function Register() {
         <Input placeholder={t("register.confirmPasswordPlaceholder")} type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="rounded-xl h-11" />
         {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
         <Button type="submit" className="rounded-xl h-11 font-bold mt-1" disabled={loading}>
-          {loading ? t("register.sendingCode") : t("register.createAccountButton")}
+          {loading ? t("register.creatingAccount") : t("register.createAccountButton")}
         </Button>
         <p className="text-sm text-muted-foreground text-center">{t("register.alreadyHaveAccount")} <Link className="text-primary font-semibold" to="/login">{t("register.login")}</Link></p>
       </form>

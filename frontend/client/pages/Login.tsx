@@ -35,9 +35,6 @@ export default function Login() {
         <p className="text-sm text-muted-foreground -mt-2">{t("login.signInSubtitle")}</p>
         <Input placeholder={t("login.emailPlaceholder")} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="rounded-xl h-11" />
         <Input placeholder={t("login.passwordPlaceholder")} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="rounded-xl h-11" />
-        <div className="flex justify-end -mt-1">
-          <Link className="text-xs text-primary font-semibold" to="/forgot-password">{t("login.forgotPassword")}</Link>
-        </div>
         {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
         <Button type="submit" className="rounded-xl h-11 font-bold" disabled={loading}>{loading ? t("login.pleaseWait") : t("login.loginButton")}</Button>
         <p className="text-sm text-muted-foreground text-center">{t("login.noAccount")} <Link className="text-primary font-semibold" to="/register">{t("login.register")}</Link></p>

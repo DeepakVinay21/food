@@ -4,9 +4,6 @@ export type AuthResponse = {
   accessToken: string;
 };
 
-export type SendVerificationResponse = {
-  message: string;
-};
 
 export type Dashboard = {
   totalProducts: number;
@@ -183,40 +180,16 @@ function makeMultiImageForm(images: Array<{ file: Blob | File; fileName: string 
 }
 
 export const api = {
-  sendVerification: (body: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string }) =>
-    request<SendVerificationResponse>("/api/v1/auth/register", {
+  register: (body: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string }) =>
+    request<AuthResponse>("/api/v1/auth/register", {
       method: "POST",
       body: JSON.stringify(body),
-    }),
-
-  verifyAndRegister: (email: string, code: string) =>
-    request<AuthResponse>("/api/v1/auth/verify", {
-      method: "POST",
-      body: JSON.stringify({ email, code }),
     }),
 
   login: (email: string, password: string) =>
     request<AuthResponse>("/api/v1/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
-    }),
-
-  forgotPassword: (email: string) =>
-    request<SendVerificationResponse>("/api/v1/auth/forgot-password", {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    }),
-
-  resendForgotPassword: (email: string) =>
-    request<SendVerificationResponse>("/api/v1/auth/resend-forgot-password", {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    }),
-
-  resetPassword: (email: string, code: string, newPassword: string, confirmNewPassword: string) =>
-    request<{ message: string }>("/api/v1/auth/reset-password", {
-      method: "POST",
-      body: JSON.stringify({ email, code, newPassword, confirmNewPassword }),
     }),
 
   dashboard: (token: string) => request<Dashboard>("/api/v1/dashboard", {}, token),

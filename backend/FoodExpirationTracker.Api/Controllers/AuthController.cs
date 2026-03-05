@@ -16,23 +16,9 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    public async Task<ActionResult<MessageResponse>> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken)
     {
         var response = await _authService.RegisterAsync(request, cancellationToken);
-        return Ok(response);
-    }
-
-    [HttpPost("verify")]
-    public async Task<ActionResult<AuthResponse>> Verify([FromBody] VerifyRequest request, CancellationToken cancellationToken)
-    {
-        var response = await _authService.VerifyAsync(request, cancellationToken);
-        return Ok(response);
-    }
-
-    [HttpPost("resend")]
-    public async Task<ActionResult<MessageResponse>> Resend([FromBody] ResendRequest request, CancellationToken cancellationToken)
-    {
-        var response = await _authService.ResendAsync(request, cancellationToken);
         return Ok(response);
     }
 
@@ -40,27 +26,6 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
     {
         var response = await _authService.LoginAsync(request, cancellationToken);
-        return Ok(response);
-    }
-
-    [HttpPost("forgot-password")]
-    public async Task<ActionResult<MessageResponse>> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
-    {
-        var response = await _authService.ForgotPasswordAsync(request, cancellationToken);
-        return Ok(response);
-    }
-
-    [HttpPost("resend-forgot-password")]
-    public async Task<ActionResult<MessageResponse>> ResendForgotPassword([FromBody] ResendRequest request, CancellationToken cancellationToken)
-    {
-        var response = await _authService.ResendForgotPasswordAsync(request, cancellationToken);
-        return Ok(response);
-    }
-
-    [HttpPost("reset-password")]
-    public async Task<ActionResult<MessageResponse>> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
-    {
-        var response = await _authService.ResetPasswordAsync(request, cancellationToken);
         return Ok(response);
     }
 }

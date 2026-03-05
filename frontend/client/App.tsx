@@ -15,7 +15,7 @@ import NotFound from "./pages/NotFound";
 import { MobileLayout } from "./components/layout/MobileLayout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
-import ForgotPassword from "./pages/ForgotPassword";
+
 import { AuthProvider } from "./components/auth/AuthProvider";
 import { RequireAuth } from "./components/auth/RequireAuth";
 import { LanguageProvider } from "./lib/i18n/LanguageContext";
@@ -45,8 +45,6 @@ const App = () => (
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-
               <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
               <Route path="/pantry" element={<RequireAuth><Pantry /></RequireAuth>} />
               <Route path="/scan" element={<RequireAuth><Scan /></RequireAuth>} />

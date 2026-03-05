@@ -3,7 +3,7 @@ using FoodExpirationTracker.Api.Middleware;
 using FoodExpirationTracker.Application.Abstractions;
 using FoodExpirationTracker.Application.Services;
 using FoodExpirationTracker.Infrastructure.AI;
-using FoodExpirationTracker.Infrastructure.Email;
+
 using FoodExpirationTracker.Infrastructure.Notifications;
 using FoodExpirationTracker.Infrastructure.Ocr;
 using FoodExpirationTracker.Infrastructure.Persistence;
@@ -180,7 +180,6 @@ else
     builder.Services.AddSingleton<IPushNotificationSender, ConsolePushNotificationSender>();
 }
 
-builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ProductService>();
 builder.Services.AddScoped<OcrIngestionService>();

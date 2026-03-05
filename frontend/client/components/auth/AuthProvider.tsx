@@ -8,8 +8,7 @@ type AuthContextValue = {
   email: string | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  sendVerification: (payload: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string }) => Promise<void>;
-  verifyAndRegister: (email: string, code: string) => Promise<void>;
+  register: (payload: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string }) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -65,12 +64,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initPushNotifications(result.accessToken).catch(() => {});
   };
 
-  const sendVerification = async (payload: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string }) => {
-    await api.sendVerification(payload);
-  };
-
-  const verifyAndRegister = async (userEmail: string, code: string) => {
-    const result = await api.verifyAndRegister(userEmail, code);
+  const register = async (payload: { email: string; password: string; confirmPassword: string; firstName: string; lastName: string }) => {
+    const result = await api.register(payload);
     save(result);
     initPushNotifications(result.accessToken).catch(() => {});
   };
@@ -96,8 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email,
         isAuthenticated: !!token,
         login,
-        sendVerification,
-        verifyAndRegister,
+        register,
         logout,
       }}
     >

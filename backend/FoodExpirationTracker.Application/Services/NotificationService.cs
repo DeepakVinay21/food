@@ -9,20 +9,17 @@ public class NotificationService
     private readonly INotificationRepository _notificationRepository;
     private readonly IPushNotificationSender _pushNotificationSender;
     private readonly IUserRepository _userRepository;
-    private readonly IEmailService _emailService;
 
     public NotificationService(
         IProductRepository productRepository,
         INotificationRepository notificationRepository,
         IPushNotificationSender pushNotificationSender,
-        IUserRepository userRepository,
-        IEmailService emailService)
+        IUserRepository userRepository)
     {
         _productRepository = productRepository;
         _notificationRepository = notificationRepository;
         _pushNotificationSender = pushNotificationSender;
         _userRepository = userRepository;
-        _emailService = emailService;
     }
 
     public async Task RunDailyExpiryScanForUserAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -31,9 +28,6 @@ public class NotificationService
         var products = await _productRepository.GetUserProductsAsync(userId, cancellationToken);
         var productNameById = products.ToDictionary(p => p.Id, p => p.Name);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-        var userEmail = user?.Email;
 
         foreach (var batch in batches)
         {
@@ -77,17 +71,6 @@ public class NotificationService
                 }
                 catch { /* Push failure should not block */ }
 
-                // Send email notification
-                if (!string.IsNullOrWhiteSpace(userEmail))
-                {
-                    try
-                    {
-                        var productName = productNameById.GetValueOrDefault(batch.ProductId, "Unknown item");
-                        await _emailService.SendExpiryAlertEmailAsync(userEmail, productName, daysUntilExpiry);
-                    }
-                    catch { /* Email failure should not block */ }
-                }
-
                 try
                 {
                     await _notificationRepository.AddAsync(new NotificationLog
@@ -114,9 +97,6 @@ public class NotificationService
         var products = await _productRepository.GetUserProductsAsync(userId, cancellationToken);
         var productNameById = products.ToDictionary(p => p.Id, p => p.Name);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-        var userEmail = user?.Email;
 
         // Collect all items expiring within 7 days (or already expired)
         var alertItems = new List<(ProductBatch batch, string productName, int daysLeft)>();
@@ -158,15 +138,6 @@ public class NotificationService
                 await _pushNotificationSender.SendExpiryNotificationAsync(userId, title, body, cancellationToken);
             }
             catch { }
-
-            if (!string.IsNullOrWhiteSpace(userEmail))
-            {
-                try
-                {
-                    await _emailService.SendExpiryAlertEmailAsync(userEmail, productName, daysLeft);
-                }
-                catch { }
-            }
 
             // Log the notification (clean up old TEST entries first)
             try

@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using FoodExpirationTracker.Application.Abstractions;
 using FoodExpirationTracker.Application.DTOs;
 using FoodExpirationTracker.Domain.Entities;
@@ -10,24 +9,18 @@ public class AuthService
     private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly ITokenService _tokenService;
-    private readonly IEmailService _emailService;
-    private readonly IEmailVerificationRepository _verificationRepository;
 
     public AuthService(
         IUserRepository userRepository,
         IPasswordHasher passwordHasher,
-        ITokenService tokenService,
-        IEmailService emailService,
-        IEmailVerificationRepository verificationRepository)
+        ITokenService tokenService)
     {
         _userRepository = userRepository;
         _passwordHasher = passwordHasher;
         _tokenService = tokenService;
-        _emailService = emailService;
-        _verificationRepository = verificationRepository;
     }
 
-    public async Task<MessageResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
+    public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
         if (request.Password != request.ConfirmPassword)
         {
@@ -42,119 +35,19 @@ public class AuthService
             throw new InvalidOperationException("Email already exists.");
         }
 
-        // Remove any previous pending verification for this email
-        var oldVerification = await _verificationRepository.GetByEmailAsync(email, cancellationToken);
-        if (oldVerification is not null)
-        {
-            await _verificationRepository.DeleteAsync(oldVerification, cancellationToken);
-        }
-
-        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-
-        var verification = new EmailVerification
+        var user = new User
         {
             Email = email,
-            Code = code,
             PasswordHash = _passwordHasher.Hash(request.Password),
             FirstName = request.FirstName.Trim(),
             LastName = request.LastName.Trim(),
             Age = request.Age,
-            ExpiryTime = DateTime.UtcNow.AddMinutes(5),
-            AttemptCount = 0,
-            CreatedAt = DateTime.UtcNow,
-            LastSentAt = DateTime.UtcNow,
-        };
-
-        await _verificationRepository.AddAsync(verification, cancellationToken);
-
-        try
-        {
-            await _emailService.SendVerificationEmailAsync(email, code);
-        }
-        catch (Exception)
-        {
-            // Clean up the verification record if email fails
-            await _verificationRepository.DeleteAsync(verification, cancellationToken);
-            throw new InvalidOperationException("Failed to send verification email. Please try again later.");
-        }
-
-        return new MessageResponse("Verification code sent to your email.");
-    }
-
-    public async Task<AuthResponse> VerifyAsync(VerifyRequest request, CancellationToken cancellationToken = default)
-    {
-        var email = request.Email.Trim().ToLowerInvariant();
-
-        var verification = await _verificationRepository.GetByEmailAsync(email, cancellationToken)
-            ?? throw new InvalidOperationException("No pending verification found for this email.");
-
-        if (DateTime.UtcNow > verification.ExpiryTime)
-        {
-            await _verificationRepository.DeleteAsync(verification, cancellationToken);
-            throw new InvalidOperationException("Verification code has expired. Please register again.");
-        }
-
-        if (verification.AttemptCount >= 5)
-        {
-            throw new InvalidOperationException("Too many attempts. Please request a new code.");
-        }
-
-        if (verification.Code != request.Code.Trim())
-        {
-            verification.AttemptCount++;
-            await _verificationRepository.UpdateAsync(verification, cancellationToken);
-            throw new InvalidOperationException("Invalid verification code.");
-        }
-
-        // Code is correct — create the user
-        var user = new User
-        {
-            Email = verification.Email,
-            PasswordHash = verification.PasswordHash,
-            FirstName = verification.FirstName,
-            LastName = verification.LastName,
-            Age = verification.Age,
         };
 
         await _userRepository.AddAsync(user, cancellationToken);
-        await _verificationRepository.DeleteAsync(verification, cancellationToken);
 
         var token = _tokenService.GenerateToken(user.Id, user.Email, user.Role.ToString());
         return new AuthResponse(user.Id, user.Email, token);
-    }
-
-    public async Task<MessageResponse> ResendAsync(ResendRequest request, CancellationToken cancellationToken = default)
-    {
-        var email = request.Email.Trim().ToLowerInvariant();
-
-        var verification = await _verificationRepository.GetByEmailAsync(email, cancellationToken)
-            ?? throw new InvalidOperationException("No pending verification found for this email.");
-
-        var secondsSinceLastSend = (DateTime.UtcNow - verification.LastSentAt).TotalSeconds;
-        if (secondsSinceLastSend < 60)
-        {
-            var wait = (int)Math.Ceiling(60 - secondsSinceLastSend);
-            throw new InvalidOperationException($"Please wait {wait} seconds before requesting a new code.");
-        }
-
-        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-        verification.Code = code;
-        verification.AttemptCount = 0;
-        verification.ExpiryTime = DateTime.UtcNow.AddMinutes(5);
-        verification.LastSentAt = DateTime.UtcNow;
-
-        await _verificationRepository.UpdateAsync(verification, cancellationToken);
-
-        try
-        {
-            await _emailService.SendVerificationEmailAsync(email, code);
-        }
-        catch (Exception)
-        {
-            throw new InvalidOperationException("Failed to send verification email. Please try again later.");
-        }
-
-        return new MessageResponse("New verification code sent to your email.");
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
@@ -209,147 +102,6 @@ public class AuthService
         user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
         user.UpdatedAtUtc = DateTime.UtcNow;
         await _userRepository.UpdateAsync(user, cancellationToken);
-    }
-
-    private const string PasswordResetSentinel = "__PASSWORD_RESET__";
-
-    public async Task<MessageResponse> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
-    {
-        var email = request.Email.Trim().ToLowerInvariant();
-
-        var user = await _userRepository.GetByEmailAsync(email, cancellationToken);
-        if (user is null)
-        {
-            // Return success even if user not found to prevent email enumeration
-            return new MessageResponse("If that email is registered, a reset code has been sent.");
-        }
-
-        // Remove any previous pending verification for this email
-        var oldVerification = await _verificationRepository.GetByEmailAsync(email, cancellationToken);
-        if (oldVerification is not null)
-        {
-            await _verificationRepository.DeleteAsync(oldVerification, cancellationToken);
-        }
-
-        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-
-        var verification = new EmailVerification
-        {
-            Email = email,
-            Code = code,
-            PasswordHash = PasswordResetSentinel,
-            FirstName = user.FirstName,
-            LastName = user.LastName,
-            Age = user.Age,
-            ExpiryTime = DateTime.UtcNow.AddMinutes(5),
-            AttemptCount = 0,
-            CreatedAt = DateTime.UtcNow,
-            LastSentAt = DateTime.UtcNow,
-        };
-
-        await _verificationRepository.AddAsync(verification, cancellationToken);
-
-        try
-        {
-            await _emailService.SendVerificationEmailAsync(email, code);
-        }
-        catch (Exception)
-        {
-            await _verificationRepository.DeleteAsync(verification, cancellationToken);
-            throw new InvalidOperationException("Failed to send reset email. Please try again later.");
-        }
-
-        return new MessageResponse("If that email is registered, a reset code has been sent.");
-    }
-
-    public async Task<MessageResponse> ResendForgotPasswordAsync(ResendRequest request, CancellationToken cancellationToken = default)
-    {
-        var email = request.Email.Trim().ToLowerInvariant();
-
-        var verification = await _verificationRepository.GetByEmailAsync(email, cancellationToken)
-            ?? throw new InvalidOperationException("No pending password reset found for this email.");
-
-        if (verification.PasswordHash != PasswordResetSentinel)
-        {
-            throw new InvalidOperationException("No pending password reset found for this email.");
-        }
-
-        var secondsSinceLastSend = (DateTime.UtcNow - verification.LastSentAt).TotalSeconds;
-        if (secondsSinceLastSend < 60)
-        {
-            var wait = (int)Math.Ceiling(60 - secondsSinceLastSend);
-            throw new InvalidOperationException($"Please wait {wait} seconds before requesting a new code.");
-        }
-
-        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-        verification.Code = code;
-        verification.AttemptCount = 0;
-        verification.ExpiryTime = DateTime.UtcNow.AddMinutes(5);
-        verification.LastSentAt = DateTime.UtcNow;
-
-        await _verificationRepository.UpdateAsync(verification, cancellationToken);
-
-        try
-        {
-            await _emailService.SendVerificationEmailAsync(email, code);
-        }
-        catch (Exception)
-        {
-            throw new InvalidOperationException("Failed to send reset email. Please try again later.");
-        }
-
-        return new MessageResponse("New reset code sent to your email.");
-    }
-
-    public async Task<MessageResponse> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
-    {
-        if (request.NewPassword != request.ConfirmNewPassword)
-        {
-            throw new InvalidOperationException("Passwords do not match.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
-        {
-            throw new InvalidOperationException("Password must be at least 6 characters.");
-        }
-
-        var email = request.Email.Trim().ToLowerInvariant();
-
-        var verification = await _verificationRepository.GetByEmailAsync(email, cancellationToken)
-            ?? throw new InvalidOperationException("No pending password reset found for this email.");
-
-        if (verification.PasswordHash != PasswordResetSentinel)
-        {
-            throw new InvalidOperationException("No pending password reset found for this email.");
-        }
-
-        if (DateTime.UtcNow > verification.ExpiryTime)
-        {
-            await _verificationRepository.DeleteAsync(verification, cancellationToken);
-            throw new InvalidOperationException("Reset code has expired. Please request a new one.");
-        }
-
-        if (verification.AttemptCount >= 5)
-        {
-            throw new InvalidOperationException("Too many attempts. Please request a new code.");
-        }
-
-        if (verification.Code != request.Code.Trim())
-        {
-            verification.AttemptCount++;
-            await _verificationRepository.UpdateAsync(verification, cancellationToken);
-            throw new InvalidOperationException("Invalid reset code.");
-        }
-
-        var user = await _userRepository.GetByEmailAsync(email, cancellationToken)
-            ?? throw new InvalidOperationException("User not found.");
-
-        user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
-        user.UpdatedAtUtc = DateTime.UtcNow;
-        await _userRepository.UpdateAsync(user, cancellationToken);
-        await _verificationRepository.DeleteAsync(verification, cancellationToken);
-
-        return new MessageResponse("Password has been reset successfully.");
     }
 
     public async Task DeleteAccountAsync(Guid userId, CancellationToken cancellationToken = default)
