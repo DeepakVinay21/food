@@ -120,6 +120,19 @@ public class NotificationService
                 await _pushNotificationSender.SendExpiryNotificationAsync(userId, title, body, cancellationToken);
             }
             catch { }
+
+            // Log so it appears in notification history
+            try
+            {
+                await _notificationRepository.AddAsync(new NotificationLog
+                {
+                    UserId = userId,
+                    ProductBatchId = null,
+                    NotificationType = "TEST",
+                    Success = true,
+                }, cancellationToken);
+            }
+            catch { }
             return;
         }
 

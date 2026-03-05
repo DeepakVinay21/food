@@ -156,9 +156,9 @@ public class AppDbContext : DbContext
             entity.Property(e => e.NotificationType).HasMaxLength(30).IsRequired();
 
             entity.HasOne(e => e.User).WithMany().HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(e => e.ProductBatch).WithMany().HasForeignKey(e => e.ProductBatchId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.ProductBatch).WithMany().HasForeignKey(e => e.ProductBatchId).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
 
-            entity.HasIndex(e => new { e.ProductBatchId, e.NotificationType }).IsUnique();
+            entity.HasIndex(e => new { e.ProductBatchId, e.NotificationType }).IsUnique().HasFilter("\"ProductBatchId\" IS NOT NULL");
             entity.HasIndex(e => new { e.UserId, e.SentAtUtc }).IsDescending(false, true);
         });
     }

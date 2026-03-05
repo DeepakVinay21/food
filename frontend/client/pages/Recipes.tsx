@@ -78,12 +78,13 @@ export default function Recipes() {
     enabled: !!token,
   });
 
-  const pantryEmpty = !pantryQuery.isLoading && (pantryQuery.data?.items ?? []).length === 0;
+  const pantryItems = pantryQuery.data?.items ?? [];
+  const pantryEmpty = !pantryQuery.isLoading && pantryItems.length === 0;
 
   const recipesQuery = useQuery({
     queryKey: ["recipes"],
     queryFn: () => api.recipes(token!),
-    enabled: !!token,
+    enabled: !!token && pantryItems.length > 0,
   });
 
   const recipes = (recipesQuery.data ?? []).filter((r) => r.matchPercent >= 50).slice(0, 6);

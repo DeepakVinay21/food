@@ -81,7 +81,8 @@ public class RecipeService
             ]
 
             Rules:
-            - matchPercent should reflect what percentage of recipe ingredients the user already has (60-100)
+            - CRITICAL: At least 50-70% of each recipe's ingredients MUST already be available in the user's pantry. Do NOT suggest recipes where the user needs to buy most ingredients.
+            - matchPercent should reflect what percentage of recipe ingredients the user already has (50-100). Never go below 50.
             - expiryPriorityScore: 0-20, higher if the recipe uses soon-to-expire ingredients
             - Keep recipes practical with 3-6 steps each
             - Include both simple quick recipes (under 15 min) and more elaborate ones
@@ -111,18 +112,20 @@ public class RecipeService
 
             if (recipes is null or { Count: 0 }) return null;
 
-            return recipes.Select(r => new RecipeSuggestionDto(
-                Guid.NewGuid(),
-                r.Name ?? "Unknown Recipe",
-                r.MealType ?? "Lunch",
-                r.Region ?? "Global",
-                "",
-                r.Ingredients ?? [],
-                r.Steps ?? [],
-                Math.Round(Math.Clamp(r.MatchPercent, 0, 100), 2),
-                Math.Round(Math.Clamp(r.ExpiryPriorityScore, 0, 20), 2),
-                Math.Round(Math.Clamp(r.MatchPercent, 0, 100) + Math.Min(20, Math.Clamp(r.ExpiryPriorityScore, 0, 20)), 2)
-            )).OrderByDescending(r => r.FinalScore).ToList();
+            return recipes
+                .Where(r => r.MatchPercent >= 50)
+                .Select(r => new RecipeSuggestionDto(
+                    Guid.NewGuid(),
+                    r.Name ?? "Unknown Recipe",
+                    r.MealType ?? "Lunch",
+                    r.Region ?? "Global",
+                    "",
+                    r.Ingredients ?? [],
+                    r.Steps ?? [],
+                    Math.Round(Math.Clamp(r.MatchPercent, 0, 100), 2),
+                    Math.Round(Math.Clamp(r.ExpiryPriorityScore, 0, 20), 2),
+                    Math.Round(Math.Clamp(r.MatchPercent, 0, 100) + Math.Min(20, Math.Clamp(r.ExpiryPriorityScore, 0, 20)), 2)
+                )).OrderByDescending(r => r.FinalScore).ToList();
         }
         catch
         {
@@ -162,6 +165,9 @@ public class RecipeService
             if (matchedKeywords.Count == 0) continue;
 
             var matchPercent = (double)matchedKeywords.Count / recipe.Keywords.Count * 100;
+
+            // Only suggest recipes where at least 50% of ingredients are available
+            if (matchPercent < 50) continue;
 
             var expiryPriority = 0.0;
             foreach (var batch in activeBatches)

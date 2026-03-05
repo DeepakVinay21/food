@@ -100,10 +100,12 @@ export default function Index() {
     enabled: !!token,
   });
 
+  const pantryItems = productsQuery.data?.items ?? [];
+
   const recipesQuery = useQuery({
     queryKey: ["recipes"],
     queryFn: () => api.recipes(token!),
-    enabled: !!token,
+    enabled: !!token && pantryItems.length > 0,
   });
 
   const today = new Date();

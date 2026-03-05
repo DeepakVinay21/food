@@ -39,10 +39,10 @@ public class NotificationsController : ControllerBase
         var logs = await _notificationRepository.GetByUserAsync(userId, cancellationToken);
         return Ok(logs.Select(l =>
         {
-            var productName = l.ProductBatch?.Product?.Name ?? "Unknown item";
-            var daysLeft = l.ProductBatch is not null
-                ? l.ProductBatch.ExpiryDate.DayNumber - DateOnly.FromDateTime(l.SentAtUtc).DayNumber
-                : (int?)null;
+            var productName = l.ProductBatch?.Product?.Name;
+            var hasProduct = productName is not null;
+            productName ??= "Your pantry";
+
             var title = l.NotificationType switch
             {
                 "EXPIRY_TODAY" => "Expired!",
@@ -58,7 +58,8 @@ public class NotificationsController : ControllerBase
                 "EXPIRY_1_DAY" => $"{productName} expires tomorrow! Use it before it goes to waste.",
                 "EXPIRY_3_DAYS" => $"{productName} expires in 3 days.",
                 "EXPIRY_7_DAYS" => $"{productName} expires in 7 days.",
-                "TEST" => $"{productName} — test notification sent.",
+                "TEST" when hasProduct => $"{productName} — test notification sent.",
+                "TEST" => "No items expiring soon. Your pantry looks great!",
                 _ => $"{productName} — {l.NotificationType}"
             };
             return new
@@ -81,7 +82,7 @@ public class NotificationsController : ControllerBase
     {
         var userId = HttpContext.GetRequiredUserId();
         await _notificationService.SendTestNotificationAsync(userId, cancellationToken);
-        return Ok(new { message = "Test notification sent (push + email)." });
+        return Ok(new { message = "Test notification sent." });
     }
 
     [HttpDelete("clear")]
